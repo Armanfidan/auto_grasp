@@ -3,7 +3,10 @@ import rospy
 from vision_msgs.msg import Detection2DArray 
 
 def callback(data):
-    rospy.loginfo(rospy.get_caller_id() + "I heard %s", data.data)
+    detection = data.detections[0]
+    rospy.loginfo("Object: " + str(detection.results[0].id) + \
+     " (score: " + str(detection.results[0].score) + ")\nBounding Box:\n" + \
+     str(detection.bbox))
     
 def listener():
 
