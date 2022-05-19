@@ -29,4 +29,3 @@ include_directories(${catkin_INCLUDE_DIRS})
 add_custom_target(spherical_grasps_server ALL
     DEPENDS ${PROJECT_NAME}_gencfg 
 )
-# add_dependencies(auto_grasp ${PROJECT_NAME}_gencfg)

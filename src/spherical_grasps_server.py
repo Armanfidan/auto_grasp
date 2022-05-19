@@ -46,7 +46,9 @@ from dynamic_reconfigure.server import Server
 
 from auto_grasp.cfg import SphericalGraspConfig
 
-from vision_msgs.msg import Detection2DArray 
+from vision_msgs.msg import Detection2D
+
+import roslaunch
 
 
 def normalize(v):
@@ -422,28 +424,27 @@ class SphericalGrasps(object):
         return g_trans
 
 
-def callback(data, args):
+def callback(detection, args):
     sg = args[0]
-    detection = data.detections[0]
-    bbox = detection.bbox
     rospy.loginfo("Object: " + str(detection.results[0].id) +
                   " (score: " + str(detection.results[0].score) + ")\nBounding Box:\n" +
                   str(detection.bbox))
     
     object_pose = PoseStamped()
+    bbox = detection.results[0].bbox
     object_pose.header.frame_id = 'base_footprint'
     object_pose.pose.position.x = bbox.center.x
     object_pose.pose.position.y = bbox.center.y
-    object_pose.pose.position.z = 1.0
-    object_pose.pose.orientation.w = bbox.size_x
-    while not rospy.is_shutdown():
-        sg.create_grasps_from_object_pose(object_pose)
-        rospy.sleep(1.0)
-
+    object_pose.pose.position.z = detection.results[0].pose.pose.position.z
+    # Radius of the sphere
+    object_pose.pose.orientation.w = max(bbox.size_xm, bbox.size_y) // 2
+    # while not rospy.is_shutdown():
+    sg.create_grasps_from_object_pose(object_pose)
+        # rospy.sleep(1.0)
 
 
 if __name__ == '__main__':
     rospy.init_node("spherical_grasps_server")
     sg = SphericalGrasps()
-    rospy.Subscriber("/detectnet/detections", Detection2DArray, callback, [sg])
+    rospy.Subscriber("/auto_grasp/grasp_data", Detection2D, callback, [sg])
     rospy.spin()
