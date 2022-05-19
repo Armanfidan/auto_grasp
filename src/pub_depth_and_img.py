@@ -1,28 +1,23 @@
-from vision_msgs.msg import Detection2D, Detection2DArray, BoundingBox3D
-from sensor_msgs.msg import CameraInfo, Image
+#! /usr/bin/env python
+
+from vision_msgs.msg import Detection2D, Detection2DArray
+from sensor_msgs.msg import Image
 import rospy
+import roslib
 import sys
-import numpy as np
-
-def callback(depth_msg, args):
-    offset = depth_msg.header.seq
-    while n:
-        offset += counter
-        counter
-        if called:
-            counter = 0
-    depth_msgs = args[0]
-    depth_msgs[seq] = depth_msg
-
 
 
 class ImageAccumulator:
     def __init__(self):
         self.depth_msgs = []
         self.offset = 0
-        self.depth_sub = rospy.Subscriber("/camera/depth/image_rect_raw", Image, self.callback_depth)
-        self.detectnet_sub = rospy.Subscriber("/detectnet/detections", Detection2DArray, self.callback_detectnet)
-        self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D)
+        
+        rospy.init_node('image_accumulator', anonymous=True)
+        self.depth_sub = rospy.Subscriber("/camera/depth/image_rect_raw", Image, self.callback_depth, queue_size=1)
+        self.detectnet_sub = rospy.Subscriber("/detectnet/detections", Detection2DArray, self.callback_detectnet, queue_size=1)
+        self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D, queue_size=1)
+
+        print("Image accumulator node initialised, waiting for messages...")
         rospy.spin()
 
     def callback_depth(self, depth_msg):
@@ -31,22 +26,25 @@ class ImageAccumulator:
         if self.offset == 0:
             self.offset = depth_msg.header.seq
         self.depth_msgs.append(depth_msg)
+        print("Depth message " + str(depth_msg.header.seq) + " received and logged")
         
-    def callback_detectnet(self, detections):
+    def callback_detectnet(self, detections_msg):
         # We get a list of detections and take the first one, because we will only concentrate on one object
         # per image.
-        detection = detections[0]
+        detection = detections_msg.detections[0]
         # The sequence number is used to identify the source image. There are different headers: For the detections
         # array (which represents the sequence number of the image itself) and for each detection, which we don't care about.
-        seq = detections.header.seq
-        try:
-            # We extract the correct depth message and reset the depth_msgs and offset.
-            depth_msg = self.depth_msgs[seq - self.offset]
-            self.depth_msgs = []
-            self.offset = 0
-        except IndexError:
-            print("A corresponding depth image could not be found for the given detection.")
+        seq = detections_msg.header.seq
+        print("Received detection sequence number is " + str(seq))
+
+        # We extract the correct depth message and reset the depth_msgs and offset.
+        index = seq - self.offset
+        if index < 0 or index >= len(self.depth_msgs):
+            print("Corresponding index would be " + str(index) + ". A corresponding depth image could not be found for the given detection.")
             sys.exit(1)
+        depth_msg = self.depth_msgs[index]
+        self.depth_msgs = []
+        self.offset = 0
 
         # We extract the required information from the depth message.
         depth_data, height, width = depth_msg.data, depth_msg.height, depth_msg.width
@@ -68,12 +66,12 @@ class ImageAccumulator:
         # I will use grasp_msg.pose.pose.position.z to carry the depth information to avoid switching from BoundingBox2D
         # to BoundingBox3D and adding complexity.
         grasp_msg.results[0].pose.pose.position.z = z
+        print("Generated sphere: (" + str(bbox.center.x) + "," + str(bbox.center.y) + "," + str(z) + "), w=" + str(bbox.size_x) + ", h=" + str(bbox.size_y))
         self.pub.publish(grasp_msg)
 
 
 def main(args):
     ImageAccumulator()
-    rospy.init_node('detection_processor', anonymous=True)
     try:
         rospy.spin()
     except KeyboardInterrupt:
