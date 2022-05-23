@@ -427,17 +427,15 @@ class SphericalGrasps(object):
 def callback(detection, args):
     sg = args[0]
     rospy.loginfo("Object: " + str(detection.results[0].id) +
-                  " (score: " + str(detection.results[0].score) + ")\nBounding Box:\n" +
-                  str(detection.bbox))
+                  " (score: " + str(detection.results[0].score))
     
     object_pose = PoseStamped()
-    bbox = detection.results[0].bbox
     object_pose.header.frame_id = 'base_footprint'
-    object_pose.pose.position.x = bbox.center.x
-    object_pose.pose.position.y = bbox.center.y
+    object_pose.pose.position.x = detection.bbox.center.x
+    object_pose.pose.position.y = detection.bbox.center.y
     object_pose.pose.position.z = detection.results[0].pose.pose.position.z
     # Radius of the sphere
-    object_pose.pose.orientation.w = max(bbox.size_xm, bbox.size_y) // 2
+    object_pose.pose.orientation.w = max(detection.bbox.size_x, detection.bbox.size_y) // 2
     # while not rospy.is_shutdown():
     sg.create_grasps_from_object_pose(object_pose)
         # rospy.sleep(1.0)

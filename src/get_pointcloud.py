@@ -33,6 +33,7 @@ class GetDepth:
 
         if not centre:
             print("The object is not in a valid position.")
+            self.bbox = None
             sys.exit(1)
         
         z = z + max(self.bbox.size_x, self.bbox.size_y) // 2
@@ -41,6 +42,7 @@ class GetDepth:
         grasp_msg = Detection2D()
         grasp_msg.header = self.detection.header
         grasp_msg.results = self.detection.results
+        grasp_msg.bbox = self.bbox
         # I will use grasp_msg.pose.pose.position.z to carry the depth information to avoid switching from BoundingBox2D
         # to BoundingBox3D and adding complexity.
         grasp_msg.results[0].pose.pose.position.z = z
