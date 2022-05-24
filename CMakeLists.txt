@@ -6,8 +6,7 @@ find_package(catkin REQUIRED COMPONENTS
     rospy
     vision_msgs
     dynamic_reconfigure
-    tf2
-    tf2_ros
+    tf
 )
 
 # catkin_install_python(
@@ -22,7 +21,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
     # INCLUDE_DIRS include
     # LIBRARIES auto_grasp
-    # CATKIN_DEPENDS roscpp rospy vision_msgs dynamic_reconfigure tf2 tf2_ros
+    # CATKIN_DEPENDS roscpp rospy vision_msgs dynamic_reconfigure tf
     # DEPENDS system_lib
 )
 
