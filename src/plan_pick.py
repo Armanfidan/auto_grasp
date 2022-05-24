@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 
 import sys
 import copy
@@ -44,7 +44,7 @@ class MotionPlanner(object):
         # Provide remote interface for getting, setting and updating the robot's internal understanding of the surrounding world:
         scene = moveit_commander.PlanningSceneInterface()
         # Interface to a planning group (group of joints). This interface can be used to plan and execute motions:
-        group_name = "kinova_gen3"
+        group_name = "arm"
         move_group = moveit_commander.MoveGroupCommander(group_name)
 
         display_trajectory_publisher = rospy.Publisher(
@@ -137,20 +137,17 @@ class MotionPlanner(object):
 
 
 def callback(grasp_poses, args):
-    print("Received poses:", grasp_poses)
-    return
-
-    input("Press enter to plan trajectory")
-    planner = args[0]
-    planner.go_to_joint_state()
-
-    pose_goal = geometry_msgs.msg.Pose()
-    pose_goal.orientation.w = 1.0
-    pose_goal.position.x = 0.4
-    pose_goal.position.y = 0.1
-    pose_goal.position.z = 0.4
-    planner.go_to_pose_goal(pose_goal)
-
+    try:
+        print(len(grasp_poses.poses), "poses received.")
+        input("Press enter to plan trajectory for the first pose.")
+        print("Planning...")
+        planner = args[0]
+        planner.go_to_joint_state()
+        planner.go_to_pose_goal(grasp_poses.poses[0])
+    except rospy.ROSInterruptException or KeyboardInterrupt:
+        print("Interrupted, cleaning up...")
+        return
+   
     # cartesian_plan, fraction = planner.plan_cartesian_path()
     # planner.display_trajectory(cartesian_plan)
     # planner.execute_plan(cartesian_plan)
@@ -162,9 +159,9 @@ def main():
     try:
         planner = MotionPlanner()
         sub_pose = rospy.Subscriber("/auto_grasp/grasp_poses", PoseArray, callback, [planner])
-    except rospy.ROSInterruptException:
-        return
-    except KeyboardInterrupt:
+        rospy.spin()
+    except rospy.ROSInterruptException or KeyboardInterrupt:
+        print("Interrupted, cleaning up...")
         return
 
 
