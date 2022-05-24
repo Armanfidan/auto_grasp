@@ -2,8 +2,10 @@
 
 from vision_msgs.msg import Detection2D, Detection2DArray
 from sensor_msgs.msg import PointCloud2
+from geometry_msgs.msg import PoseStamped
 import sensor_msgs.point_cloud2 as pc2
 import rospy
+import tf2_ros
 import sys
 import math
 
@@ -17,6 +19,22 @@ class GetDepth:
         self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.callback_pc, queue_size=1)
         self.detectnet_sub = rospy.Subscriber("/detectnet/detections", Detection2DArray, self.callback_detectnet, region_size, queue_size=1)
         self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D, queue_size=1)
+    
+    def listener(self):
+        tfBuffer = tf2_ros.Buffer()
+        listener = tf2_ros.TransformListener(tfBuffer)
+
+        rate = rospy.Rate(10.0)
+        while not rospy.is_shutdown():
+            try:
+                trans = tfBuffer.lookup_transform("camera_link", 'base_link', rospy.Time())
+                print(trans)
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                rate.sleep()
+                continue
+
+            msg = PoseStamped()
+            rate.sleep()
 
     def callback_pc(self, pc):
         if not self.bbox:
@@ -30,13 +48,17 @@ class GetDepth:
             x, y, z = point
             if not (math.isnan(x) or math.isnan(y) or math.isnan(z)):
                 centre = point
+                break
 
         if not centre:
             print("The object is not in a valid position.")
             self.bbox = None
             sys.exit(1)
         
-        z = z + max(self.bbox.size_x, self.bbox.size_y) // 2
+        self.listener()
+        
+        # TODO: Uncomment this, commented only for debugging purposes
+        # z = z + max(self.bbox.size_x, self.bbox.size_y) // 2
 
         # Creating the grasp message.
         grasp_msg = Detection2D()

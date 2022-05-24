@@ -143,7 +143,8 @@ def callback(grasp_poses, args):
         print("Planning...")
         planner = args[0]
         planner.go_to_joint_state()
-        planner.go_to_pose_goal(grasp_poses.poses[0])
+        for pose in grasp_poses.poses:
+            planner.go_to_pose_goal(pose)
     except rospy.ROSInterruptException or KeyboardInterrupt:
         print("Interrupted, cleaning up...")
         return

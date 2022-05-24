@@ -33,14 +33,20 @@
   <build_depend>rospy</build_depend>
   <build_depend>vision_msgs</build_depend>
   <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>tf2</build_depend>
+  <build_depend>tf2_ros</build_depend>
   <build_export_depend>roscpp</build_export_depend>
   <build_export_depend>rospy</build_export_depend>
   <build_export_depend>vision_msgs</build_export_depend>
   <build_export_depend>dynamic_reconfigure</build_export_depend>
+  <build_export_depend>tf2</build_export_depend>
+  <build_export_depend>tf2_ros</build_export_depend>
   <exec_depend>roscpp</exec_depend>
   <exec_depend>rospy</exec_depend>
   <exec_depend>vision_msgs</exec_depend>
   <exec_depend>dynamic_reconfigure</exec_depend>
+  <exec_depend>tf2</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <export>
   </export>
