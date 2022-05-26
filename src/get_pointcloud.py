@@ -20,13 +20,13 @@ class GetDepth:
         rospy.init_node('image_accumulator', anonymous=True)
         self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.callback_pc, queue_size=1)
         self.detectnet_sub = rospy.Subscriber("/detectnet/detections", Detection2DArray, self.callback_detectnet, region_size, queue_size=1)
-        self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
+        self.tf_sub = rospy.Subscriber("/clock", TFMessage, self.tf_listener, queue_size=1)
         self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D, queue_size=1)
         self.listener = tf.TransformListener()
 
-    def tf_listener(self, msg):
-        print("Message:", msg)
-        self.tf_timestamp = msg.transforms[0].header.stamp.secs
+    def tf_listener(self, clock):
+        self.secs = clock.clock.secs
+        self.nsecs = clock.clock.nsecs
 
 
     def callback_pc(self, pointcloud):
@@ -45,7 +45,9 @@ class GetDepth:
                 print(untransformable)
                 centre.point = Point(x, y, z)
                 try:
-                    centre.header.stamp.secs = self.tf_timestamp
+                    centre.header.stamp.secs = self.secs
+                    centre.header.stamp.nsecs = self.nsecs
+                    self.listener.waitForTransform("/base_link", "/camera_color_optical_frame", centre.header.stamp, rospy.Duration(4.0))
                     centre = self.listener.transformPoint("/base_link", centre)
                 except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
                     print(e)
