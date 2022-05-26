@@ -1,8 +1,10 @@
 #! /usr/bin/env python
 
+from pickle import NONE
 from vision_msgs.msg import Detection2D, Detection2DArray
 from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import PointStamped, Point
+from tf2_msgs.msg import TFMessage
 import sensor_msgs.point_cloud2 as pc2
 import rospy
 import tf
@@ -18,8 +20,14 @@ class GetDepth:
         rospy.init_node('image_accumulator', anonymous=True)
         self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.callback_pc, queue_size=1)
         self.detectnet_sub = rospy.Subscriber("/detectnet/detections", Detection2DArray, self.callback_detectnet, region_size, queue_size=1)
+        self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
         self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D, queue_size=1)
         self.listener = tf.TransformListener()
+
+    def tf_listener(self, msg):
+        print("Message:", msg)
+        self.tf_timestamp = msg.transforms[0].header.stamp.secs
+
 
     def callback_pc(self, pointcloud):
         if not self.bbox:
@@ -37,10 +45,12 @@ class GetDepth:
                 print(untransformable)
                 centre.point = Point(x, y, z)
                 try:
-                    # TODO: Fix robot URDF to include base_link.
+                    centre.header.stamp.secs = self.tf_timestamp
                     centre = self.listener.transformPoint("/base_link", centre)
                 except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
                     print(e)
+                    print(centre.header)
+
                     untransformable = True
                     continue
                 untransformable = False
