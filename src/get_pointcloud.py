@@ -1,11 +1,11 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 
 from vision_msgs.msg import Detection2D, Detection2DArray
 from sensor_msgs.msg import PointCloud2
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PointStamped, Point
 import sensor_msgs.point_cloud2 as pc2
 import rospy
-import tf2_ros
+import tf
 import sys
 import math
 
@@ -19,43 +19,42 @@ class GetDepth:
         self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.callback_pc, queue_size=1)
         self.detectnet_sub = rospy.Subscriber("/detectnet/detections", Detection2DArray, self.callback_detectnet, region_size, queue_size=1)
         self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D, queue_size=1)
-    
-    def listener(self):
-        tfBuffer = tf2_ros.Buffer()
-        listener = tf2_ros.TransformListener(tfBuffer)
+        self.listener = tf.TransformListener()
 
-        rate = rospy.Rate(10.0)
-        while not rospy.is_shutdown():
-            try:
-                trans = tfBuffer.lookup_transform("camera_link", 'base_link', rospy.Time())
-                print(trans)
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                rate.sleep()
-                continue
-
-            msg = PoseStamped()
-            rate.sleep()
-
-    def callback_pc(self, pc):
+    def callback_pc(self, pointcloud):
         if not self.bbox:
             return
         
-        points = pc2.read_points(pc, field_names=('x', 'y', 'z'), uvs=self.object_region)
+        points = pc2.read_points(pointcloud, field_names=('x', 'y', 'z'), uvs=self.object_region)
+        centre = PointStamped()
+        centre.header = pointcloud.header
+        centre.point = None
 
-        centre = None
-
+        untransformable = False
         for point in points:
             x, y, z = point
             if not (math.isnan(x) or math.isnan(y) or math.isnan(z)):
-                centre = point
+                print(untransformable)
+                centre.point = Point(x, y, z)
+                try:
+                    centre = self.listener.transformPoint("/base_link", centre)
+                except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+                    print(e)
+                    untransformable = True
+                    continue
+                untransformable = False
                 break
 
-        if not centre:
+        if not centre.point:
             print("The object is not in a valid position.")
             self.bbox = None
             sys.exit(1)
+        if untransformable or math.isnan(centre.point.x) or math.isnan(centre.point.y) or math.isnan(centre.point.z):
+            print("The point %s could not be transformed.", str(centre.point))
+            self.bbox = None
+            sys.exit(1)
         
-        self.listener()
+
         
         # TODO: Uncomment this, commented only for debugging purposes
         # z = z + max(self.bbox.size_x, self.bbox.size_y) // 2
@@ -67,7 +66,7 @@ class GetDepth:
         grasp_msg.bbox = self.bbox
         # I will use grasp_msg.pose.pose.position.z to carry the depth information to avoid switching from BoundingBox2D
         # to BoundingBox3D and adding complexity.
-        grasp_msg.results[0].pose.pose.position.z = z
+        grasp_msg.results[0].pose.pose.position.z = centre.point.z
         print("Generated sphere: (" + str(self.bbox.center.x) + "," + str(self.bbox.center.y) + "," + str(z) + "), w=" + str(self.bbox.size_x) + ", h=" + str(self.bbox.size_y))
         self.pub.publish(grasp_msg)
         
@@ -98,3 +97,5 @@ def main(args):
 
 if __name__ == "__main__":
     main(sys.argv)
+
+
