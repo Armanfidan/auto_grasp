@@ -23,7 +23,6 @@ class GetDepth:
         self.clock_sub = rospy.Subscriber("/clock", Clock, self.callback_clock, queue_size=1)
         self.pub = rospy.Publisher("/auto_grasp/grasp_data", Detection2D, queue_size=1)
         self.listener = tf.TransformListener()
-        print("Pointcloud and DetectNet subscribers initialised")
 
     def callback_clock(self, clock_msg):
         self.clock = clock_msg.clock
@@ -95,7 +94,9 @@ class GetDepth:
 
 
 def main(args):
+    rospy.init_node("depth_collector")
     GetDepth(region_size=[2])
+    print("Depth collector node initialised, waiting for messages...")
     try:
         rospy.spin()
     except KeyboardInterrupt:
