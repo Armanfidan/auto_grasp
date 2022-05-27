@@ -4,34 +4,13 @@ import sys
 import copy
 import rospy
 import moveit_commander
-import moveit_msgs.msg
-import geometry_msgs.msg
+from actionlib import SimpleActionClient
+
+from moveit_msgs.msg import PickupAction, PickupGoal, DisplayTrajectory
+from geometry_msgs.msg import PoseStamped, Pose
 from math import pi
 from moveit_commander.conversions import pose_to_list
 from geometry_msgs.msg import PoseArray
-
-
-def all_close(goal, actual, tolerance):
-    """
-    Convenience method for testing if a list of values are within a tolerance of their counterparts in another list
-    @param: goal       A list of floats, a Pose or a PoseStamped
-    @param: actual     A list of floats, a Pose or a PoseStamped
-    @param: tolerance  A float
-    @returns: bool
-    """
-    all_equal = True
-    if type(goal) is list:
-        for index in range(len(goal)):
-            if abs(actual[index] - goal[index]) > tolerance:
-                return False
-
-    elif type(goal) is geometry_msgs.msg.PoseStamped:
-        return all_close(goal.pose, actual.pose, tolerance)
-
-    elif type(goal) is geometry_msgs.msg.Pose:
-        return all_close(pose_to_list(goal), pose_to_list(actual), tolerance)
-
-    return True
 
 
 class MotionPlanner(object):
@@ -39,16 +18,21 @@ class MotionPlanner(object):
         super(MotionPlanner, self).__init__()
         moveit_commander.roscpp_initialize(sys.argv)
         rospy.init_node('motion_planner', anonymous=True)
-        # Instantiate a `RobotCommander`_ object. Provides information such as the robot's kinematic model and the robot's current joint states
+        
         robot = moveit_commander.RobotCommander()
-        # Provide remote interface for getting, setting and updating the robot's internal understanding of the surrounding world:
         scene = moveit_commander.PlanningSceneInterface()
+
         # Interface to a planning group (group of joints). This interface can be used to plan and execute motions:
         group_name = "arm"
         move_group = moveit_commander.MoveGroupCommander(group_name)
 
+        rospy.loginfo("Connecting to MoveIt PickUp server...")
+        self.pickup_ac = SimpleActionClient('/pickup', PickupAction)
+        self.pickup_ac.wait_for_server()
+        rospy.loginfo("Succesfully connected.")
+
         display_trajectory_publisher = rospy.Publisher(
-            '/move_group/display_planned_path',  moveit_msgs.msg.DisplayTrajectory,   queue_size=20)
+            '/move_group/display_planned_path',  DisplayTrajectory,   queue_size=20)
 
         self.box_name = ''
         self.robot = robot
@@ -125,7 +109,7 @@ class MotionPlanner(object):
         # You can ask RViz to visualize a plan (aka trajectory) for you. But the group.plan() method does this automatically.
         # A `DisplayTrajectory`_ msg has two primary fields, trajectory_start and trajectory. We populate the trajectory_start with our current robot state to copy over
         # any AttachedCollisionObjects and add our plan to the trajectory.
-        display_trajectory = moveit_msgs.msg.DisplayTrajectory()
+        display_trajectory = DisplayTrajectory()
         display_trajectory.trajectory_start = self.robot.get_current_state()
         display_trajectory.trajectory.append(plan)
         self.display_trajectory_publisher.publish(display_trajectory)
@@ -134,6 +118,26 @@ class MotionPlanner(object):
         # **Note:** The robot's current joint state must be within some tolerance of the
         # first waypoint in the `RobotTrajectory`_ or ``execute()`` will fail
         self.move_group.execute(plan, wait=True)
+
+    def createPickupGoal(self, group="arm", target="coloredCube",
+					 grasp_pose=PoseStamped(),
+					 possible_grasps=[],
+					 links_to_allow_contact=None):
+        """ Create a PickupGoal with the provided data"""
+        print(links_to_allow_contact)
+        goal = PickupGoal()
+        goal.target_name = target
+        goal.group_name = group
+        goal.possible_grasps.extend(possible_grasps)
+        goal.allowed_planning_time = 35.0
+        goal.planning_options.planning_scene_diff.is_diff = True
+        goal.planning_options.planning_scene_diff.robot_state.is_diff = True
+        goal.planning_options.plan_only = False
+        goal.planning_options.replan = True
+        goal.planning_options.replan_attempts = 1  # 10
+        goal.allowed_touch_objects = []
+        goal.attached_object_touch_links = ['<octomap>']
+        goal.attached_object_touch_links.extend(links_to_allow_contact)
 
 
 def callback(grasp_poses, args):
