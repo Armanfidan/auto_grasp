@@ -98,7 +98,7 @@ class ImageRotator:
                     is_bigendian = True
                 elif image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8:
                     num_bytes = 1
-                    encoding = "8UC1"
+                    encoding = "mono8"
                     is_bigendian = True
                 elif image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U16:
                     num_bytes = 2
@@ -155,16 +155,14 @@ def main(argv):
     parser.add_argument('--image-sources', help='Get image from source(s)', action='append')
     parser.add_argument('--image-service', help='Name of the image service to query.',
                         default=ImageClient.default_service_name)
-    options = parser.parse_args(argv)
+    options, unknown = parser.parse_known_args(argv)
 
     # Raise exception if no actionable argument provided
     if not options.list and not options.image_sources:
         parser.error('Must provide actionable argument (list or image-sources).')
 
     # Initialise the node
-    rospy.init_node("image_rotator")
-    rospy.loginfo("Image rotator node initialised.")
-    rospy.loginfo("Press Ctrl+C to interrupt.")
+    rospy.init_node("expose_rotated_images")
     rotator = ImageRotator(options)
     while not rospy.is_shutdown():
         try:

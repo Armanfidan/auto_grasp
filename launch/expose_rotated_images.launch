@@ -1,0 +1,17 @@
+<launch>
+
+    <arg name="username" default="user" />
+    <arg name="password" default="oxyw9las1i8b" />
+    <arg name="hostname" default="192.168.50.3" />
+
+    <node pkg="auto_grasp" type="expose_rotated_images.py" name="expose_rotated_images"
+    args="$(arg hostname)
+          --username $(arg username)
+          --password $(arg password)
+	      --image-sources frontleft_fisheye_image
+          --image-sources frontleft_depth_in_visual_frame
+	      --image-sources frontright_fisheye_image
+          --image-sources frontright_depth_in_visual_frame"
+    output="screen"/>
+
+</launch>
