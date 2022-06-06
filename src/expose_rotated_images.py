@@ -132,12 +132,14 @@ class ImageRotator:
                 
                 # Build ROS message
                 local_time = self.robotToLocalTime(image.shot.acquisition_time)
-                image_msg.header.seq = self.seq
+                # image_msg.header.seq =   # Just a way to store data
                 self.seq += 1
                 image_msg.header.stamp = rospy.Time(local_time.seconds, local_time.nanos)
                 image_msg.header.frame_id = image.source.name
                 image_msg.encoding = encoding
                 image_msg.height = image.shot.image.cols
+                # print("Depth scale:", image.source.depth_scale)
+                # image_msg.height = image.source.depth_scale
                 image_msg.width = image.shot.image.rows
                 image_msg.is_bigendian = is_bigendian
                 image_msg.step = num_bytes * image.shot.image.rows
