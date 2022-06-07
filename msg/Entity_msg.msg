@@ -1,0 +1,2 @@
+std_msgs/String ObjectClass
+geometry_msgs/PoseStamped Pose

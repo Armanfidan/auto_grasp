@@ -20,6 +20,8 @@ depth_image_topic = '/depth/' + source + '/image'
 detection_topic = '/detectnet/detections'
 camera_info_topic = '/depth/' + source + '/camera_info'
 
+final_frame_id = "/vision_odometry_frame"
+
 
 def get_distance_to_bbox_centre(raw_depth_image, bbox_centre, roi_size, depth_scale):
     
@@ -61,8 +63,9 @@ class ObjectLocaliser:
         self.detectnet_sub = rospy.Subscriber(detection_topic, Detection2DArray, self.detection_callback, queue_size=1)
         self.camera_info_sub = rospy.Subscriber(camera_info_topic, CameraInfo, self.camera_info_callback, queue_size=1)
         self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
-        rospy.loginfo("Publishing object positions on /object_position")
-        self.object_point_pub = rospy.Publisher("/object_position", PointStamped, queue_size=1)
+        # rospy.loginfo("Publishing object positions on /object_point")
+        self.object_point_camera_frame_pub = rospy.Publisher("/object_point/camera_frame", PointStamped, queue_size=1)
+        self.object_point_odometry_frame_pub = rospy.Publisher("/object_point/odometry_frame", PointStamped, queue_size=1)
         self.listener = tf.TransformListener()
 
     def get_object_position(self, raw_depth_image):
@@ -128,29 +131,31 @@ class ObjectLocaliser:
         
         object_in_camera_frame = self.get_object_position(raw_depth_image)
 
-        object_point = PointStamped()
-        object_point.header.stamp = self.tf_timestamp
-        object_point.header.frame_id = self.frame_id
-        object_point.point = Point(
+        object_point_camera_frame = PointStamped()
+        object_point_camera_frame.header.stamp = self.tf_timestamp
+        object_point_camera_frame.header.frame_id = self.frame_id
+        object_point_camera_frame.point = Point(
             x=object_in_camera_frame.x,
             y=object_in_camera_frame.y,
             z=object_in_camera_frame.z
         )
-        self.object_point_pub.publish(object_point)
+        self.object_point_camera_frame_pub.publish(object_point_camera_frame)
         try:
-            self.listener.waitForTransform(self.frame_id, "vision_odometry_frame", self.tf_timestamp, rospy.Duration(4.0))
-            object_point = self.listener.transformPoint("/vision_odometry_frame", object_point)
+            self.listener.waitForTransform(self.frame_id, final_frame_id, self.tf_timestamp, rospy.Duration(4.0))
+            object_point_odometry_frame = self.listener.transformPoint(final_frame_id, object_point_camera_frame)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             print(e)
         
-        # print(object_point)
+        self.object_point_odometry_frame_pub.publish(object_point_odometry_frame)
 
-        if not object_point.point:
+        if not object_point_odometry_frame.point:
             print("The object is not in a valid position.")
             self.bbox = None
             return
-        if math.isnan(object_point.point.x) or math.isnan(object_point.point.y) or math.isnan(object_point.point.z):
-            print("The point %s could not be transformed.", str(object_point.point))
+        if math.isnan(object_point_odometry_frame.point.x) or \
+                math.isnan(object_point_odometry_frame.point.y) or \
+                math.isnan(object_point_odometry_frame.point.z):
+            print("The point %s could not be transformed.", str(object_point_odometry_frame.point))
             self.bbox = None
             return
         
