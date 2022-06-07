@@ -120,10 +120,17 @@ class Planner():
         _pose = PoseStamped()
         _pose.header = _pointStamped.header
         _pose.pose.position = _pointStamped.point
+        
         # Correct offset added by the depth sensor and/or hand-camera calibration
-        _pose.pose.position.z += 0.075
-        _pose.pose.position.y += 0.065
-        _pose.pose.position.x += 0.05
+        # _pose.pose.position.z += 0.075
+        # _pose.pose.position.y += 0.065
+        # _pose.pose.position.x += 0.05
+        
+        # Adjusted empirically, might not be correct since odometry frame might have moved.
+        # Tweak as required.
+        _pose.pose.position.z -= 0.02
+        _pose.pose.position.y -= 0.02
+        _pose.pose.position.x -= 0.02
         _pose.pose.orientation = Quaternion()
         rospy.loginfo("Object pose: %s", _pose.pose)
 
