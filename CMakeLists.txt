@@ -14,6 +14,25 @@ find_package(catkin REQUIRED COMPONENTS
     # DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
 
+add_message_files(
+   FILES
+   Entity_msg.msg
+   CurrentState.msg
+ )
+
+## Generate services in the 'srv' folder
+add_service_files(
+   FILES
+   AddFloorPlane.srv
+   RemoveFloorPlane.srv
+)
+
+generate_messages(
+   DEPENDENCIES
+   std_msgs
+   geometry_msgs
+)
+
 generate_dynamic_reconfigure_options(
     cfg/SphericalGrasp.cfg
 )

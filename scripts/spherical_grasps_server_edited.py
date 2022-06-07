@@ -24,6 +24,7 @@
 
 import rospy
 import numpy as np
+import sys
 import math
 from math import radians, pi
 import copy
@@ -42,7 +43,13 @@ from tf import transformations
 from tf.transformations import quaternion_from_euler, euler_from_quaternion, quaternion_about_axis, unit_vector, quaternion_multiply
 
 from dynamic_reconfigure.server import Server
-from kinova_cube_stacking.cfg import SphericalGraspConfig
+
+from auto_grasp.cfg import SphericalGraspConfig
+
+from vision_msgs.msg import Detection2D
+
+import roslaunch
+
 
 def normalize(v):
     norm = np.linalg.norm(v)
@@ -51,6 +58,7 @@ def normalize(v):
     return v / norm
 
 # http://stackoverflow.com/questions/17044296/quaternion-rotation-without-euler-angles
+
 
 def quaternion_from_vectors(v0, v1):
     if type(v0) == Point():
@@ -76,6 +84,7 @@ def quaternion_from_vectors(v0, v1):
     q[2] = c[2] / s
     q[3] = s / 2.0
     return q
+
 
 def filter_poses(sphere_poses, object_pose,
                  filter_behind=False,
@@ -104,7 +113,7 @@ def filter_poses(sphere_poses, object_pose,
 def sort_by_height(sphere_poses):
     # We prefer to grasp from top to be safer
     newlist = sorted(
-        sphere_poses, key=lambda item: item.position.z, reverse=True)
+        sphere_poses, key=lambda item: item.position.z, reverse=False)
     sorted_list = newlist
     return sorted_list
 
@@ -119,11 +128,11 @@ class SphericalGrasps(object):
 
         # Setup Markers for debugging
         self.poses_pub = rospy.Publisher(
-            '/sphere_poses', PoseArray, latch=True)
+            '/auto_grasp/sphere_poses', PoseArray, latch=True)
         self.grasps_pub = rospy.Publisher(
-            '/grasp_poses', PoseArray, latch=True)
+            '/auto_grasp/grasp_poses', PoseArray, latch=True)
         self.object_pub = rospy.Publisher(
-            '/object_marker', Marker, latch=True)
+            '/auto_grasp/object_marker', Marker, latch=True)
 
         rospy.loginfo("SphericalGrasps initialized!")
 
@@ -414,18 +423,26 @@ class SphericalGrasps(object):
         g_trans.min_distance = min_distance
         return g_trans
 
+
+def callback(detection, args):
+    sg = args[0]
+    rospy.loginfo("Object: " + str(detection.results[0].id) +
+                  " (score: " + str(detection.results[0].score))
+    
+    object_pose = PoseStamped()
+    object_pose.header.frame_id = 'base_footprint'
+    object_pose.pose.position.x = detection.bbox.center.x
+    object_pose.pose.position.y = detection.bbox.center.y
+    object_pose.pose.position.z = detection.results[0].pose.pose.position.z
+    # Radius of the sphere
+    object_pose.pose.orientation.w = max(detection.bbox.size_x, detection.bbox.size_y) // 2
+    # while not rospy.is_shutdown():
+    sg.create_grasps_from_object_pose(object_pose)
+        # rospy.sleep(1.0)
+
+
 if __name__ == '__main__':
     rospy.init_node("spherical_grasps_server")
     sg = SphericalGrasps()
-    # rospy.spin()
-
-    # For debugging pourposes
-    ps = PoseStamped()
-    ps.header.frame_id = 'base_footprint'
-    ps.pose.position.x = 1.0
-    ps.pose.position.y = 0.0
-    ps.pose.position.z = 1.0
-    ps.pose.orientation.w = 1.0
-    while not rospy.is_shutdown():
-        sg.create_grasps_from_object_pose(ps)
-        rospy.sleep(1.0)
+    rospy.Subscriber("/auto_grasp/grasp_data", Detection2D, callback, [sg])
+    rospy.spin()

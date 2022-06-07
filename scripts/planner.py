@@ -42,6 +42,14 @@ click_topic = '/detectnet/overlay_mouse_left'
 object_point_topic = '/object_point/odometry_frame'
 
 
+moveit_error_dict = {}
+for name in MoveItErrorCodes.__dict__.keys():
+	if not name[:1] == '_':
+		code = MoveItErrorCodes.__dict__[name]
+		moveit_error_dict[code] = name
+
+
+
 class Planner():
     def __init__(self):
         
@@ -58,7 +66,6 @@ class Planner():
         # Get the links of the end effector excluded from collisions
         self.touch_links = self.kinova_gen3.robot.get_link_names(group="gripper")
 
-        self.camera_info_subscriber = rospy.Subscriber(camera_info_topic_name, CameraInfo, self.camera_info_callback, queue_size=1)
         self.click_topic_sub = rospy.Subscriber(click_topic, Point, self.mouseclick_callback, queue_size=1)
         self.object_point_sub = rospy.Subscriber(object_point_topic, PointStamped, self.object_point_callback, queue_size=1)
 
@@ -83,14 +90,19 @@ class Planner():
         self.stand_srv_prox = rospy.ServiceProxy("stand_cmd", Stand)
         self.stand_srv_req = StandRequest()
 
+        print("Going home...")
         self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
+        print("I'm home.")
 
     def mouseclick_callback(self, _):
+        print("Clicked!")
         self.grasp = True
 
     def object_point_callback(self, object_point):
         if not self.grasp:
             return
+        self.grasp = False
+        print("Received object point:\n", object_point)
         self.grasp_object(object_point)
 
     def grasp_object(self, _pointStamped, object_class="TeddyBear"):
@@ -116,7 +128,7 @@ class Planner():
         rospy.loginfo("Object pose: %s", _pose.pose)
 
         #Add object description in scene
-        self.add_collision_objects(object_class, _pose)
+        self.add_collision_objects(_pose, object_class)
         #Pick
         self.pick(_pose, object_class)
     
@@ -151,7 +163,7 @@ class Planner():
         rospy.loginfo("Object pose: %s", _pose.pose)
 
         #Add object description in scene
-        self.add_collision_objects(object_class, _pose)
+        self.add_collision_objects(_pose, object_class)
 
         #self.kinova_gen3.reach_cartesian_pose(pose=actual_pose, tolerance=0.01, constraints=constraints)
         self.kinova_gen3.reach_cartesian_pose(pose=actual_pose, tolerance=0.01)
@@ -198,12 +210,13 @@ class Planner():
             
     def add_collision_objects(self, pose_stamped, object_class):
 
-        self.scene.add_box("object_space", pose_stamped, size=(0.15, 0.15, 0.2))
-        self.scene.add_sphere(object_class, pose_stamped, radius=0.025)
+        self.scene.add_box("object_space", pose_stamped, size=(0.10, 0.10, 0.10))
+        self.scene.add_sphere(object_class, pose_stamped, radius=0.013)
 
         success = False
         while not success:
-            success = self.wait_for_state_update(object_class, object_is_known=True) and self.wait_for_state_update("object_space", object_is_known=True)
+            success = self.wait_for_state_update(object_class, object_is_known=True) and \
+                    self.wait_for_state_update("object_space", object_is_known=True)
         
         # self.add_floor_plane()
         rospy.sleep(5)
