@@ -198,12 +198,11 @@ class ObjectLocaliser:
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             print(e)
         
-        self.object_point_odometry_frame_pub.publish(object_point_odometry_frame)
-
         if not object_point_odometry_frame.point:
             print("The object is not in a valid position.")
             self.bbox = None
             return
+
         if math.isnan(object_point_odometry_frame.point.x) or \
                 math.isnan(object_point_odometry_frame.point.y) or \
                 math.isnan(object_point_odometry_frame.point.z):
@@ -211,6 +210,7 @@ class ObjectLocaliser:
             self.bbox = None
             return
         
+        self.object_point_odometry_frame_pub.publish(object_point_odometry_frame)
         self.bbox = None
   
     def detection_callback(self, detections_msg):
