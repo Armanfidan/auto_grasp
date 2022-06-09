@@ -6,6 +6,7 @@ from geometry_msgs.msg import PointStamped, Point
 from tf2_msgs.msg import TFMessage
 import rospy
 import tf
+import tf2_ros
 import sys
 import math
 import numpy as np
@@ -195,8 +196,9 @@ class ObjectLocaliser:
         try:
             self.listener.waitForTransform(self.depth_frame_id, final_frame_id, self.tf_timestamp, rospy.Duration(4.0))
             object_point_odometry_frame = self.listener.transformPoint(final_frame_id, object_point_camera_frame)
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
-            print(e)
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException, tf2_ros.TransformException) as e:
+            print("The point could not be transformed:", e)
+            return
         
         if not object_point_odometry_frame.point:
             print("The object is not in a valid position.")
