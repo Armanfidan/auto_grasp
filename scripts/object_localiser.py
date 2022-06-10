@@ -14,16 +14,16 @@ from bosdyn.client.math_helpers import Quat, SE3Pose
 from cv_bridge import CvBridge
 
 sources = ['frontleft', 'frontright']
-
 source = sources[1]
 
+# CHANGE TO FALSE TO SWITCH TO SPOT'S CAMERAS
+use_arm_camera = False
+
 detection_topic = '/detectnet/detections'
-# depth_image_topic = '/depth/' + source + '/image'
-# camera_info_topic = '/depth/' + source + '/camera_info'
 
 # Very important - use non-rectified images for both detection and raycasting, otherwise transforms won't work.
-depth_image_topic = '/camera/depth/image_raw'
-camera_info_topic = '/camera/depth/camera_info'
+depth_image_topic = '/camera/depth/image_raw' if use_arm_camera else '/depth/' + source + '/image'
+camera_info_topic = '/camera/depth/camera_info' if use_arm_camera else '/depth/' + source + '/camera_info'
 
 final_frame_id = "/vision_odometry_frame"
 
@@ -182,7 +182,8 @@ class ObjectLocaliser:
         bridge = CvBridge()
         raw_depth_image = bridge.imgmsg_to_cv2(depth_image_msg, desired_encoding="passthrough")
         
-        object_in_camera_frame = self.get_object_position_kinova(raw_depth_image)
+        object_in_camera_frame = self.get_object_position_kinova(raw_depth_image) if use_arm_camera \
+                else self.get_object_position_spot(raw_depth_image)
 
         object_point_camera_frame = PointStamped()
         object_point_camera_frame.header.stamp = self.tf_timestamp
@@ -216,8 +217,8 @@ class ObjectLocaliser:
         self.bbox = None
   
     def detection_callback(self, detections_msg):
-        for detection in detections_msg.detections
-            if detection.results[0].id == '88' or detection.results[0].id == '11':
+        for detection in detections_msg.detections:
+            if not use_arm_camera or detection.results[0].id == 88 or detection.results[0].id == 11:
                 self.raw_bbox_centre = (
                     int(detection.bbox.center.x),
                     int(detection.bbox.center.y)
