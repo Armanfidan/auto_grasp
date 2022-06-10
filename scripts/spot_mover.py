@@ -32,7 +32,8 @@ rviz_frame_id = "kinova_camera_color_frame"
 class SpotMover:
     def __init__(self):
         self.pose = None
-        self.prev_pose = None
+        self.past_poses = []
+        self.next_poses = []
 
         rospy.init_node('spot_mover', anonymous=True)
 
@@ -61,7 +62,6 @@ class SpotMover:
             return
 
         print(self.trajectory.waypoints)
-        self.prev_pose = self.pose
 
         try:
             rospy.wait_for_service('trajectory_cmd', timeout=2.0)
@@ -142,10 +142,12 @@ class SpotMover:
 Key legend:\n \
     1 - Grasp!\n \
     2 - Move to grasping distance from the object,\n" + \
-("    3 - Move to the previous position,\n" if self.prev_pose else "") + \
+("    3 - Move back in position history,\n" if len(self.past_poses) > 0 else "") + \
+("    4 - Move forward in position history,\n" if len(self.next_poses) > 0 else "") + \
 "     Any other key - Refresh positions\n\n")
         print("\n\n-----------------------\n-----------------------\n\n")
 
+        self.past_poses.append(self.pose)
         if point_to_move == '1':
             print("Moving Spot and grasping...")
             self.goal_pose_2d.position = object_point.point
@@ -153,11 +155,16 @@ Key legend:\n \
         elif point_to_move == '2':
             print("Moving Spot to grasping distance from the object...")
             self.goal_pose_2d = self.proximity.pose
-        elif point_to_move == '3' and self.prev_pose:
-            print("Moving Spot to its previous position...")
-            self.goal_pose_2d = self.prev_pose.pose
+        elif point_to_move == '3' and len(self.past_poses) > 0:
+            print("Moving Spot back in position history...")
+            self.next_poses.append(self.pose)
+            self.goal_pose_2d = self.past_poses.pop().pose
+        elif point_to_move == '4' and len(self.next_poses) > 0:
+            print("Moving Spot forward in position history...")
+            self.goal_pose_2d = self.next_poses.pop().pose
         else:
             print("Skipping the object...")
+            self.past_poses.pop()
         
 
 def main(args):
