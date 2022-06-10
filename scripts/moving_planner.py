@@ -13,7 +13,7 @@ import tf2_ros
 import moveit_commander
 from actionlib import SimpleActionClient
 
-
+from std_msgs.msg import String
 from moveit_msgs.msg import Grasp, Constraints, OrientationConstraint, PickupAction, PickupGoal, PickupResult, MoveItErrorCodes
 
 from std_msgs.msg import String, Header, Bool
@@ -38,8 +38,8 @@ from cv_bridge import CvBridge
 from bosdyn.client.math_helpers import Quat, SE3Pose
 
 
-click_topic = '/detectnet/overlay_mouse_left'
-object_point_topic = '/object_point/odometry_frame'
+artificial_object_point_topic = '/move_spot/artificial_object_point'
+spot_move_topic = '/move_spot/'
 
 
 moveit_error_dict = {}
@@ -66,8 +66,10 @@ class Planner():
         # Get the links of the end effector excluded from collisions
         self.touch_links = self.kinova_gen3.robot.get_link_names(group="gripper")
 
-        self.click_topic_sub = rospy.Subscriber(click_topic, Point, self.mouseclick_callback, queue_size=1)
-        self.object_point_sub = rospy.Subscriber(object_point_topic, PointStamped, self.object_point_callback, queue_size=1)
+        self.artificial_object_point_sub = \
+            rospy.Subscriber(artificial_object_point_topic, PointStamped, self.artificial_object_point_callback, queue_size=1)
+
+        self.spot_move_pub = rospy.Publisher(spot_move_topic, String, queue_size=1)
 
         rospy.init_node('planner', anonymous=True)
         
@@ -94,16 +96,8 @@ class Planner():
         self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
         print("I'm home.")
 
-    def mouseclick_callback(self, object_position):
-        print("Clicked!")
-        self.grasp = True
-
-    def object_point_callback(self, object_point):
-        if not self.grasp:
-            return
-        self.grasp = False
-        print("Received object point:\n", object_point)
-        self.grasp_object(object_point)
+    def artificial_object_point_callback(self, object_position):
+        self.grasp_object(object_position)
 
     def grasp_object(self, _pointStamped, object_class="TeddyBear"):
         rospy.loginfo("Removing any previous objects")
@@ -200,6 +194,9 @@ class Planner():
         self.pickup_ac.send_goal(goal)
         rospy.loginfo("Waiting for result")
         self.pickup_ac.wait_for_result()
+
+        self.spot_move_pub.publish(String("Time to move Spot!"))
+
         result = self.pickup_ac.get_result()
         rospy.logdebug("Using arm result: " + str(result))
         rospy.loginfo("Pick result: " + str(moveit_error_dict[result.error_code.val]))

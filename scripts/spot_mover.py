@@ -8,6 +8,8 @@ import sys
 import math
 import numpy as np
 
+from std_msgs.msg import String
+
 from spot_driver.msg import KinematicState
 import spot_driver.srv
 from tf2_msgs.msg import TFMessage
@@ -36,16 +38,37 @@ class SpotMover:
 
         self.kinematic_state_sub = rospy.Subscriber('/kinematic_state', KinematicState, self.kinematic_state_callback, queue_size=1)
         self.object_point_sub = rospy.Subscriber('/object_point/odometry_frame', PointStamped, self.object_point_callback, queue_size=1)
+        self.spot_move_sub = rospy.Subscriber('/move_spot', String, self.spot_move_callback, queue_size=1)
 
-        self.halfway_pub = rospy.Publisher('/waypoints/halfway', PoseStamped, queue_size=1)
-        self.proximity_pub = rospy.Publisher('/waypoints/proximity', PoseStamped, queue_size=1)
+        self.proximity_pub = rospy.Publisher('/waypoints/self.proximity', PoseStamped, queue_size=1)
+        self.artificial_object_point_pub = rospy.Publisher('/move_spot/artificial_object_point', PointStamped, queue_size=1)
         
         self.trajectory_cmd = rospy.ServiceProxy('trajectory_cmd', spot_driver.srv.Trajectory)
         self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
         self.listener = tf.TransformListener()
+
+        # Create trajectory request for service
+        self.trajectory = spot_driver.srv.TrajectoryRequest()
+        self.goal_pose_2d = Pose()
+        self.trajectory.waypoints = PoseArray()
+        self.trajectory.waypoints.poses.append(self.goal_pose_2d)
     
     def tf_listener(self, tf_msg):
         self.tf_timestamp = tf_msg.transforms[0].header.stamp
+    
+    def spot_move_callback(self, _):
+        if not self.proximity:
+            return
+
+        print(self.trajectory.waypoints)
+        self.prev_pose = self.pose
+
+        try:
+            rospy.wait_for_service('trajectory_cmd', timeout=2.0)
+            self.trajectory_cmd(self.trajectory)
+        except rospy.ServiceException as e:
+            print("Service call failed: %s"%e, end='')
+            return
 
     def kinematic_state_callback(self, kinematic_state):
         self.pose = PoseStamped()
@@ -90,31 +113,22 @@ class SpotMover:
         artificial_object_point.header = object_point.header
         artificial_object_point.point.x = self.pose.pose.position.x + distance_correction_ratio * vector.x
         artificial_object_point.point.y = self.pose.pose.position.y + distance_correction_ratio * vector.y
+        artificial_object_point.point.z = self.pose.pose.position.y + distance_correction_ratio * vector.z
 
-        proximity = PoseStamped()
-        proximity.header = object_point.header
-        proximity.pose.position.x = object_point.point.x - distance_correction_ratio * vector.x
-        proximity.pose.position.y = object_point.point.y - distance_correction_ratio * vector.y
+        self.artificial_object_point_pub.publish(artificial_object_point)
 
-        proximity.pose.orientation.x = heading
-        proximity.pose.orientation.y = 0
-        proximity.pose.orientation.z = 0
-        proximity.pose.orientation.w = 0
+        self.proximity = PoseStamped()
+        self.proximity.header = object_point.header
+        self.proximity.pose.position.x = object_point.point.x - distance_correction_ratio * vector.x
+        self.proximity.pose.position.y = object_point.point.y - distance_correction_ratio * vector.y
 
-        print("\nProximity point:\n", proximity.pose)
+        self.proximity.pose.orientation.x = heading
+        self.proximity.pose.orientation.y = 0
+        self.proximity.pose.orientation.z = 0
+        self.proximity.pose.orientation.w = 0
 
-        # Halfway point between spot and the object
-        halfway = PoseStamped()
-        halfway.header = object_point.header
-        halfway.pose.position.x = self.pose.pose.position.x + 0.5 * vector.x
-        halfway.pose.position.y = self.pose.pose.position.y + 0.5 * vector.y
-        halfway.pose.orientation.x = self.pose.pose.orientation.x
-        halfway.pose.orientation.y = self.pose.pose.orientation.y
-        halfway.pose.orientation.z = self.pose.pose.orientation.z
-        # halfway.point.z = self.pose.pose.position.z + 0.5 * vector.z
-
-        print("\nHalfway point:\n", halfway.pose)
-
+        print("\nProximity point:\n", self.proximity.pose)
+        
         # RViz does not display points in the vision odometry frame, so transform them to the camera frame before publishing
         if rviz:
             try:
@@ -124,52 +138,26 @@ class SpotMover:
                 print(e)
                 return
 
-        self.halfway_pub.publish(halfway)
-        self.proximity_pub.publish(proximity)
-
-        # Create trajectory request for service
-        trajectory = spot_driver.srv.TrajectoryRequest()
-        waypoints = PoseArray()
-        goal_pose_2d = Pose()
-
         point_to_move = input("\n-----------------------\n-----------------------\n\n    \
-To move Spot, press:\n \
-    - 1 to move to the object,\n \
-    - 2 to move halfway to the object,\n \
-    - 3 to move to grasping distance from the object,\n" + \
-("    - 4 to move to the previous position,\n" if self.prev_pose else "") + \
-"     - Any other key to skip this object.\n\n")
+Key legend:\n \
+    1 - Grasp!\n \
+    2 - Move to grasping distance from the object,\n" + \
+("    3 - Move to the previous position,\n" if self.prev_pose else "") + \
+"     Any other key - Refresh positions\n\n")
         print("\n\n-----------------------\n-----------------------\n\n")
 
         if point_to_move == '1':
-            print("Moving Spot to the object...")
-            goal_pose_2d.position = object_point.point
+            print("Moving Spot and grasping...")
+            self.goal_pose_2d.position = object_point.point
+            self.proximity_pub.publish(self.proximity)
         elif point_to_move == '2':
-            print("Moving Spot halfway to the object...")
-            goal_pose_2d = halfway.pose
-        elif point_to_move == '3':
             print("Moving Spot to grasping distance from the object...")
-            goal_pose_2d = proximity.pose
-        elif point_to_move == '4' and self.prev_pose:
+            self.goal_pose_2d = self.proximity.pose
+        elif point_to_move == '3' and self.prev_pose:
             print("Moving Spot to its previous position...")
-            goal_pose_2d = self.prev_pose.pose
+            self.goal_pose_2d = self.prev_pose.pose
         else:
             print("Skipping the object...")
-            return
-
-        waypoints.poses.append(goal_pose_2d)
-        trajectory.waypoints = waypoints
-
-        print(trajectory.waypoints)
-
-        self.prev_pose = self.pose
-
-        try:
-            rospy.wait_for_service('trajectory_cmd', timeout=2.0)
-            self.trajectory_cmd(trajectory)
-        except rospy.ServiceException as e:
-            print("Service call failed: %s"%e, end='')
-            return
         
 
 def main(args):
