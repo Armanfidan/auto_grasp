@@ -216,11 +216,13 @@ class ObjectLocaliser:
         self.bbox = None
   
     def detection_callback(self, detections_msg):
-        detection = detections_msg.detections[0]
-        self.raw_bbox_centre = (
-            int(detection.bbox.center.x),
-            int(detection.bbox.center.y)
-        )
+        for detection in detections_msg.detections
+            if detection.results[0].id == '88' or detection.results[0].id == '11':
+                self.raw_bbox_centre = (
+                    int(detection.bbox.center.x),
+                    int(detection.bbox.center.y)
+                )
+                break
 
 
 def main(args):
