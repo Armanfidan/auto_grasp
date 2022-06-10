@@ -22,8 +22,10 @@ use_arm_camera = False
 detection_topic = '/detectnet/detections'
 
 # Very important - use non-rectified images for both detection and raycasting, otherwise transforms won't work.
-depth_image_topic = '/camera/depth/image_raw' if use_arm_camera else '/depth/' + source + '/image'
-camera_info_topic = '/camera/depth/camera_info' if use_arm_camera else '/depth/' + source + '/camera_info'
+kinova_depth_image_topic = '/camera/depth/image_raw'
+kinova_camera_info_topic = '/camera/depth/camera_info'
+spot_depth_image_topic = '/depth/' + source + '/image'
+spot_camera_info_topic = '/depth/' + source + '/camera_info'
 
 final_frame_id = "/vision_odometry_frame"
 
@@ -64,13 +66,20 @@ class ObjectLocaliser:
 
         rospy.init_node('object_localiser', anonymous=True)
 
-        self.depth_sub = rospy.Subscriber(depth_image_topic, Image, self.depth_image_callback, queue_size=1)
+        self.kinova_depth_sub = rospy.Subscriber(kinova_depth_image_topic, Image, self.kinova_depth_image_callback, queue_size=1)
+        self.spot_depth_sub = rospy.Subscriber(spot_depth_image_topic, Image, self.spot_depth_image_callback, queue_size=1)
+
+        self.kinova_camera_info_sub = rospy.Subscriber(kinova_camera_info_topic, CameraInfo, self.kinova_camera_info_callback, queue_size=1)
+        self.spot_camera_info_sub = rospy.Subscriber(spot_camera_info_topic, CameraInfo, self.spot_camera_info_callback, queue_size=1)
+
         self.detectnet_sub = rospy.Subscriber(detection_topic, Detection2DArray, self.detection_callback, queue_size=1)
-        self.camera_info_sub = rospy.Subscriber(camera_info_topic, CameraInfo, self.camera_info_callback, queue_size=1)
+        
+        self.kinova_object_point_camera_frame_pub = rospy.Publisher("/object_point/kinova/camera_frame", PointStamped, queue_size=1)
+        self.kinova_object_point_odometry_frame_pub = rospy.Publisher("/object_point/kinova/odometry_frame", PointStamped, queue_size=1)
+        self.spot_object_point_camera_frame_pub = rospy.Publisher("/object_point/spot/camera_frame", PointStamped, queue_size=1)
+        self.spot_object_point_odometry_frame_pub = rospy.Publisher("/object_point/spot/odometry_frame", PointStamped, queue_size=1)
+
         self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
-        # rospy.loginfo("Publishing object positions on /object_point")
-        self.object_point_camera_frame_pub = rospy.Publisher("/object_point/camera_frame", PointStamped, queue_size=1)
-        self.object_point_odometry_frame_pub = rospy.Publisher("/object_point/odometry_frame", PointStamped, queue_size=1)
         self.listener = tf.TransformListener()
 
     def get_object_position_spot(self, raw_depth_image):
@@ -162,7 +171,20 @@ class ObjectLocaliser:
     def tf_listener(self, tf_msg):
         self.tf_timestamp = tf_msg.transforms[0].header.stamp
 
-    def camera_info_callback(self, camera_info_msg):
+    def kinova_camera_info_callback(self, camera_info_msg):
+        if self.intrinsics_exist:
+            return
+        self.depth_frame_id = camera_info_msg.header.frame_id
+        self.width, self.height = camera_info_msg.width, camera_info_msg.height
+        self.camera_intrinsics = {
+            'focal_x': camera_info_msg.K[0],
+            'focal_y': camera_info_msg.K[4],
+            'principal_x': camera_info_msg.K[2],
+            'principal_y': camera_info_msg.K[5]
+        }
+        self.intrinsics_exist = True
+    
+    def spot_camera_info_callback(self, camera_info_msg):
         if self.intrinsics_exist:
             return
         self.depth_frame_id = camera_info_msg.header.frame_id
@@ -175,16 +197,27 @@ class ObjectLocaliser:
         }
         self.intrinsics_exist = True
 
-    def depth_image_callback(self, depth_image_msg):
+    def kinova_depth_image_callback(self, depth_image_msg):
         if not (self.raw_bbox_centre and self.intrinsics_exist):
             return
 
         bridge = CvBridge()
         raw_depth_image = bridge.imgmsg_to_cv2(depth_image_msg, desired_encoding="passthrough")
         
-        object_in_camera_frame = self.get_object_position_kinova(raw_depth_image) if use_arm_camera \
-                else self.get_object_position_spot(raw_depth_image)
+        object_in_camera_frame = self.get_object_position_kinova(raw_depth_image)
+        self.localise_object(object_in_camera_frame, 'kinova')
 
+    def spot_depth_image_callback(self, depth_image_msg):
+        if not (self.raw_bbox_centre and self.intrinsics_exist):
+            return
+
+        bridge = CvBridge()
+        raw_depth_image = bridge.imgmsg_to_cv2(depth_image_msg, desired_encoding="passthrough")
+        
+        object_in_camera_frame = self.get_object_position_spot(raw_depth_image)
+        self.localise_object(object_in_camera_frame, 'spot')
+
+    def localise_object(object_in_camera_frame, source_robot)
         object_point_camera_frame = PointStamped()
         object_point_camera_frame.header.stamp = self.tf_timestamp
         object_point_camera_frame.header.frame_id = self.depth_frame_id
@@ -213,7 +246,10 @@ class ObjectLocaliser:
             self.bbox = None
             return
         
-        self.object_point_odometry_frame_pub.publish(object_point_odometry_frame)
+        if source_robot == 'kinova':
+            self.kinova_object_point_odometry_frame_pub.publish(object_point_odometry_frame)
+        elif source_robot == 'spot':
+            self.spot_object_point_odometry_frame_pub.publish(object_point_odometry_frame)
         self.bbox = None
   
     def detection_callback(self, detections_msg):

@@ -32,16 +32,17 @@ rviz_frame_id = "kinova_camera_color_frame"
 class SpotMover:
     def __init__(self):
         self.pose = None
-        self.past_poses = []
-        self.next_poses = []
+        # self.past_poses = []
+        # self.next_poses = []
+        self.prev_pose = None
 
         rospy.init_node('spot_mover', anonymous=True)
 
         self.kinematic_state_sub = rospy.Subscriber('/kinematic_state', KinematicState, self.kinematic_state_callback, queue_size=1)
-        self.object_point_sub = rospy.Subscriber('/object_point/odometry_frame', PointStamped, self.object_point_callback, queue_size=1)
+        self.object_point_sub = rospy.Subscriber('/object_point/kinova/odometry_frame', PointStamped, self.object_point_callback, queue_size=1)
         self.spot_move_sub = rospy.Subscriber('/move_spot', String, self.spot_move_callback, queue_size=1)
 
-        self.proximity_pub = rospy.Publisher('/waypoints/self.proximity', PoseStamped, queue_size=1)
+        self.proximity_pub = rospy.Publisher('/waypoints/proximity', PoseStamped, queue_size=1)
         self.artificial_object_point_pub = rospy.Publisher('/move_spot/artificial_object_point', PointStamped, queue_size=1)
         
         self.trajectory_cmd = rospy.ServiceProxy('trajectory_cmd', spot_driver.srv.Trajectory)
@@ -61,8 +62,9 @@ class SpotMover:
             return
 
         self.trajectory.waypoints.poses = [self.goal_pose_2d]
-        print(self.trajectory.waypoints)
-
+        # print(self.trajectory.waypoints)
+        rospy.sleep(5)
+        
         try:
             rospy.wait_for_service('trajectory_cmd', timeout=2.0)
             self.trajectory_cmd(self.trajectory)
@@ -103,19 +105,19 @@ class SpotMover:
         ground_distance_to_object = np.sqrt(vector.x ** 2 + vector.y ** 2)
         if ground_distance_to_object < 1.9:
             print("\nDistance between Spot and object is {:.2f} metres.".format(ground_distance_to_object))
-            print("Spot needs to be at least 1.75 metres away from the object.")
+            print("Spot needs to be at least 1.9 metres away from the object.")
             return
 
         # Now we create an artificial position for the object in front of spot.
         # This is where the arm will be moving towards.
-        object_distance_correction_ratio = (ground_distance_to_object - 1.9) / ground_distance_to_object
-        spot_distance_correction_ratio = (ground_distance_to_object - 1.9) / ground_distance_to_object
+        object_distance_correction_ratio = (ground_distance_to_object - 2.2) / ground_distance_to_object
+        spot_distance_correction_ratio = (ground_distance_to_object - 2.2) / ground_distance_to_object
 
         artificial_object_point = PointStamped()
         artificial_object_point.header = object_point.header
         artificial_object_point.point.x = self.pose.pose.position.x + object_distance_correction_ratio * vector.x
         artificial_object_point.point.y = self.pose.pose.position.y + object_distance_correction_ratio * vector.y
-        # artificial_object_point.point.z = self.pose.pose.position.y + distance_correction_ratio * vector.z
+        artificial_object_point.point.z = 0.15
 
         self.proximity = PoseStamped()
         self.proximity.header = object_point.header
@@ -140,15 +142,16 @@ class SpotMover:
                 print(e)
                 return
 
-        print("Past poses:\n", self.past_poses)
-        print("Next poses:\n", self.next_poses)
+        # print("Past poses:\n", self.past_poses)
+        # print("Next poses:\n", self.next_poses)
 
         point_to_move = input("\n-----------------------\n-----------------------\n\n    \
 Key legend:\n \
     1 - Grasp!\n \
     2 - Move to grasping distance from the object,\n" + \
-("    3 - Move back in position history,\n" if len(self.past_poses) > 0 else "") + \
-("    4 - Move forward in position history,\n" if len(self.next_poses) > 0 else "") + \
+("    3 - Move back in position history,\n" if self.prev_pose else "") + \
+# if len(self.past_poses) > 0 else "") + \
+# ("    4 - Move forward in position history,\n" if len(self.next_poses) > 0 else "") + \
 "     Any other key - Refresh positions\n\n")
         print("\n\n-----------------------\n-----------------------\n\n")
 
@@ -159,32 +162,36 @@ Key legend:\n \
             print("Moving Spot and grasping...")
             self.goal_pose_2d = self.proximity.pose
             self.artificial_object_point_pub.publish(artificial_object_point)
-            self.past_poses.append(self.pose)
+            # self.past_poses.append(self.pose)
+            self.prev_pose = self.pose
         elif point_to_move == '2':
             print("Moving Spot to grasping distance from the object...")
             move = True
             self.goal_pose_2d = self.proximity.pose
-            self.past_poses.append(self.pose)
-        elif point_to_move == '3' and len(self.past_poses) > 0:
+            # self.past_poses.append(self.pose)
+            self.prev_pose = self.pose
+        elif point_to_move == '3' and self.prev_pose:
+        # len(self.past_poses) > 0:
             print("Moving Spot back in position history...")
             move = True
-            self.next_poses.append(self.pose)
-            previous_pose = self.past_poses.pop()
-            print(previous_pose)
-            self.goal_pose_2d = previous_pose.pose
-            self.past_poses.append(self.pose)
-        elif point_to_move == '4' and len(self.next_poses) > 0:
-            move = True
-            print("Moving Spot forward in position history...")
-            self.goal_pose_2d = self.next_poses.pop().pose
-            self.past_poses.append(self.pose)
+            # self.next_poses.append(self.pose)
+            # previous_pose = self.past_poses.pop()
+            # print(previous_pose)
+            self.goal_pose_2d = self.prev_pose.pose
+            self.prev_pose = self.pose
+            # self.past_poses.append(self.pose)
+        # elif point_to_move == '4' and len(self.next_poses) > 0:
+        #     move = True
+        #     print("Moving Spot forward in position history...")
+        #     self.goal_pose_2d = self.next_poses.pop().pose
+        #     self.past_poses.append(self.pose)
         else:
             print("Skipping the object...")
         
         if move:
             self.trajectory.waypoints.poses = [self.goal_pose_2d]
             try:
-                print("moving spot to:\n", self.goal_pose_2d)
+                # print("moving spot to:\n", self.goal_pose_2d)
                 rospy.wait_for_service('trajectory_cmd', timeout=2.0)
                 self.trajectory_cmd(self.trajectory)
             except rospy.ServiceException as e:

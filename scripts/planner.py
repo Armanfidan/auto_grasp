@@ -36,10 +36,11 @@ from spot_driver.srv import Stand, StandRequest
 from cv_bridge import CvBridge
 
 from bosdyn.client.math_helpers import Quat, SE3Pose
+from spot_driver.msg import KinematicState
 
 
 click_topic = '/detectnet/overlay_mouse_left'
-object_point_topic = '/object_point/odometry_frame'
+object_point_topic = '/object_point/spot/odometry_frame'
 
 
 moveit_error_dict = {}
@@ -52,10 +53,11 @@ for name in MoveItErrorCodes.__dict__.keys():
 
 class Planner():
     def __init__(self):
-        
+        self.pose = None
         self.object_class = ""
         self.grasp = False
 
+        self.kinematic_state_sub = rospy.Subscriber('/kinematic_state', KinematicState, self.kinematic_state_callback, queue_size=1)
         # Create robot object
         self.kinova_gen3 = KinovaGen3(rospy.get_namespace(), True, "kinova_finger_joint", 7)
 
@@ -93,6 +95,18 @@ class Planner():
         print("Going home...")
         self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
         print("I'm home.")
+
+    def kinematic_state_callback(self, kinematic_state):
+        if not self.pose:
+            self.pose = PoseStamped()
+        self.pose.header.frame_id = 'vision_odometry_frame'
+        self.pose.pose.position.x = kinematic_state.vision_tform_body.translation.x
+        self.pose.pose.position.y = kinematic_state.vision_tform_body.translation.y
+        self.pose.pose.position.z = kinematic_state.vision_tform_body.translation.z
+        self.pose.pose.orientation.x = kinematic_state.vision_tform_body.rotation.x
+        self.pose.pose.orientation.y = kinematic_state.vision_tform_body.rotation.y
+        self.pose.pose.orientation.z = kinematic_state.vision_tform_body.rotation.z
+        self.pose.pose.orientation.w = kinematic_state.vision_tform_body.rotation.w
 
     def mouseclick_callback(self, object_position):
         print("Clicked!")
@@ -193,6 +207,10 @@ class Planner():
         # Create an array of graps to be attempted
         grasps = []
         grasps = self.sg.create_grasps_from_object_pose(pose_stamped)
+        for grasp in grasps:
+            # pass
+            # grasp.grasp_pose.pose.orientation.x = self.pose.pose.orientation.x
+            grasp.grasp_pose.pose.orientation.y = self.pose.pose.orientation.y
 
         goal = self.createPickupGoal("arm", object_class, pose_stamped, grasps, self.touch_links)
 

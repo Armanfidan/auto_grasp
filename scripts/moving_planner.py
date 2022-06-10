@@ -189,6 +189,8 @@ class Planner():
         grasps = []
         grasps = self.sg.create_grasps_from_object_pose(pose_stamped)
 
+        print(grasps[0])
+
         goal = self.createPickupGoal("arm", object_class, pose_stamped, grasps, self.touch_links)
 
         rospy.loginfo("Sending goal")
@@ -202,14 +204,18 @@ class Planner():
         rospy.logdebug("Using arm result: " + str(result))
         rospy.loginfo("Pick result: " + str(moveit_error_dict[result.error_code.val]))
 
+        self.kinova_gen3.reach_gripper_position(0.1)
+
+        # Once we reach this position I want to reach this position
+
         # Resume octomap updates 
         self.republish = True
 
-        rospy.loginfo("Going home...")
-        self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
-        #self.go_to_joint_position(known_joint_positions['home'], tolerance=0.01)
-        rospy.loginfo("Opening gripper")
-        self.kinova_gen3.reach_gripper_position(0.1)
+        # rospy.loginfo("Going home...")
+        # self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
+        # #self.go_to_joint_position(known_joint_positions['home'], tolerance=0.01)
+        # rospy.loginfo("Opening gripper")
+        # self.kinova_gen3.reach_gripper_position(0.1)
 
         return result.error_code.val
             
