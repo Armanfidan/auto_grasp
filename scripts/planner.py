@@ -92,9 +92,9 @@ class Planner():
         self.stand_srv_prox = rospy.ServiceProxy("stand_cmd", Stand)
         self.stand_srv_req = StandRequest()
 
-        print("Going home...")
-        self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
-        print("I'm home.")
+        # print("Going home...")
+        # self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
+        # print("I'm home.")
 
     def kinematic_state_callback(self, kinematic_state):
         if not self.pose:

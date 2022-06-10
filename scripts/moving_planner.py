@@ -38,6 +38,7 @@ from cv_bridge import CvBridge
 from bosdyn.client.math_helpers import Quat, SE3Pose
 
 
+object_point_topic = '/object_point/odometry_frame'
 artificial_object_point_topic = '/move_spot/artificial_object_point'
 spot_move_topic = '/move_spot/'
 
@@ -55,6 +56,7 @@ class Planner():
         
         self.object_class = ""
         self.grasp = False
+        self.first_stage_complete = False
 
         # Create robot object
         self.kinova_gen3 = KinovaGen3(rospy.get_namespace(), True, "kinova_finger_joint", 7)
@@ -68,6 +70,8 @@ class Planner():
 
         self.artificial_object_point_sub = \
             rospy.Subscriber(artificial_object_point_topic, PointStamped, self.artificial_object_point_callback, queue_size=1)
+        self.object_point_sub = \
+            rospy.Subscriber(object_point_topic, PointStamped, self.object_point_callback, queue_size=1)
 
         self.spot_move_pub = rospy.Publisher(spot_move_topic, String, queue_size=1)
 
@@ -97,8 +101,18 @@ class Planner():
         print("I'm home.")
 
     def artificial_object_point_callback(self, object_position):
-        print("\nRECEIVED ARTIFICIAL GRASPING POINT. GRASPING!\n")
+        if self.first_stage_complete:
+            return
+        print("\nRECEIVED ARTIFICIAL OBJECT POINT. GRASPING!\n")
         self.grasp_object(object_position)
+
+    def object_point_callback(self, object_position):
+        # print("object point received. Is the first stage complete?", self.first_stage_complete)
+        if not self.first_stage_complete:
+            return
+        print("\nRECEIVED OBJECT POINT. GRASPING!\n")
+        self.grasp_object(object_position)
+        self.first_stage_complete = False
 
     def grasp_object(self, _pointStamped, object_class="TeddyBear"):
         rospy.loginfo("Removing any previous objects")
@@ -117,13 +131,13 @@ class Planner():
         _pose.pose.position = _pointStamped.point
         
         # Correct offset added by the depth sensor and/or hand-camera calibration
-        # _pose.pose.position.z += 0.075
+        # _pose.pose.position.z += 0.05
         # _pose.pose.position.y += 0.065
         # _pose.pose.position.x += 0.05
         
         # Adjusted empirically, might not be correct since odometry frame might have moved.
         # Tweak as required.
-        _pose.pose.position.z -= 0.02
+        _pose.pose.position.z += 0.01
         _pose.pose.position.y -= 0.02
         _pose.pose.position.x -= 0.02
         _pose.pose.orientation = Quaternion()
@@ -189,7 +203,7 @@ class Planner():
         grasps = []
         grasps = self.sg.create_grasps_from_object_pose(pose_stamped)
 
-        print(grasps[0])
+        # print(grasps[0])
 
         goal = self.createPickupGoal("arm", object_class, pose_stamped, grasps, self.touch_links)
 
@@ -204,18 +218,18 @@ class Planner():
         rospy.logdebug("Using arm result: " + str(result))
         rospy.loginfo("Pick result: " + str(moveit_error_dict[result.error_code.val]))
 
-        self.kinova_gen3.reach_gripper_position(0.1)
-
-        # Once we reach this position I want to reach this position
-
         # Resume octomap updates 
         self.republish = True
+        
+        if self.first_stage_complete:
+            rospy.loginfo("Going home...")
+            self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
+            #self.go_to_joint_position(known_joint_positions['home'], tolerance=0.01)
+            rospy.loginfo("Opening gripper")
 
-        # rospy.loginfo("Going home...")
-        # self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
-        # #self.go_to_joint_position(known_joint_positions['home'], tolerance=0.01)
-        # rospy.loginfo("Opening gripper")
-        # self.kinova_gen3.reach_gripper_position(0.1)
+        self.kinova_gen3.reach_gripper_position(0.1)
+
+        self.first_stage_complete = True
 
         return result.error_code.val
             

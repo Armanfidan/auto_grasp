@@ -35,11 +35,12 @@ class SpotMover:
         # self.past_poses = []
         # self.next_poses = []
         self.prev_pose = None
+        self.proximity = None
 
         rospy.init_node('spot_mover', anonymous=True)
 
         self.kinematic_state_sub = rospy.Subscriber('/kinematic_state', KinematicState, self.kinematic_state_callback, queue_size=1)
-        self.object_point_sub = rospy.Subscriber('/object_point/kinova/odometry_frame', PointStamped, self.object_point_callback, queue_size=1)
+        self.object_point_sub = rospy.Subscriber('/object_point/odometry_frame', PointStamped, self.object_point_callback, queue_size=1)
         self.spot_move_sub = rospy.Subscriber('/move_spot', String, self.spot_move_callback, queue_size=1)
 
         self.proximity_pub = rospy.Publisher('/waypoints/proximity', PoseStamped, queue_size=1)
@@ -110,8 +111,8 @@ class SpotMover:
 
         # Now we create an artificial position for the object in front of spot.
         # This is where the arm will be moving towards.
-        object_distance_correction_ratio = (ground_distance_to_object - 2.2) / ground_distance_to_object
-        spot_distance_correction_ratio = (ground_distance_to_object - 2.2) / ground_distance_to_object
+        object_distance_correction_ratio = (ground_distance_to_object - 1.8) / ground_distance_to_object
+        spot_distance_correction_ratio = (ground_distance_to_object - 1.8) / ground_distance_to_object
 
         artificial_object_point = PointStamped()
         artificial_object_point.header = object_point.header
@@ -149,7 +150,7 @@ class SpotMover:
 Key legend:\n \
     1 - Grasp!\n \
     2 - Move to grasping distance from the object,\n" + \
-("    3 - Move back in position history,\n" if self.prev_pose else "") + \
+("     3 - Move back in position history,\n" if self.prev_pose else "") + \
 # if len(self.past_poses) > 0 else "") + \
 # ("    4 - Move forward in position history,\n" if len(self.next_poses) > 0 else "") + \
 "     Any other key - Refresh positions\n\n")
