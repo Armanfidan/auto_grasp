@@ -97,6 +97,7 @@ class Planner():
         print("I'm home.")
 
     def artificial_object_point_callback(self, object_position):
+        print("\nRECEIVED ARTIFICIAL GRASPING POINT. GRASPING!\n")
         self.grasp_object(object_position)
 
     def grasp_object(self, _pointStamped, object_class="TeddyBear"):
@@ -192,10 +193,10 @@ class Planner():
 
         rospy.loginfo("Sending goal")
         self.pickup_ac.send_goal(goal)
+        self.spot_move_pub.publish(String("Time to move Spot!"))
+        
         rospy.loginfo("Waiting for result")
         self.pickup_ac.wait_for_result()
-
-        self.spot_move_pub.publish(String("Time to move Spot!"))
 
         result = self.pickup_ac.get_result()
         rospy.logdebug("Using arm result: " + str(result))

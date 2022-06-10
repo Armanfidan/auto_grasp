@@ -52,7 +52,6 @@ class SpotMover:
         self.trajectory = spot_driver.srv.TrajectoryRequest()
         self.goal_pose_2d = Pose()
         self.trajectory.waypoints = PoseArray()
-        self.trajectory.waypoints.poses.append(self.goal_pose_2d)
     
     def tf_listener(self, tf_msg):
         self.tf_timestamp = tf_msg.transforms[0].header.stamp
@@ -61,6 +60,7 @@ class SpotMover:
         if not self.proximity:
             return
 
+        self.trajectory.waypoints.poses = [self.goal_pose_2d]
         print(self.trajectory.waypoints)
 
         try:
@@ -71,7 +71,8 @@ class SpotMover:
             return
 
     def kinematic_state_callback(self, kinematic_state):
-        self.pose = PoseStamped()
+        if not self.pose:
+            self.pose = PoseStamped()
         self.pose.header.frame_id = 'vision_odometry_frame'
         self.pose.pose.position.x = kinematic_state.vision_tform_body.translation.x
         self.pose.pose.position.y = kinematic_state.vision_tform_body.translation.y
@@ -100,32 +101,33 @@ class SpotMover:
 
         # L2 distance to the object
         ground_distance_to_object = np.sqrt(vector.x ** 2 + vector.y ** 2)
-        if ground_distance_to_object < 1.75:
+        if ground_distance_to_object < 1.9:
             print("\nDistance between Spot and object is {:.2f} metres.".format(ground_distance_to_object))
             print("Spot needs to be at least 1.75 metres away from the object.")
             return
 
         # Now we create an artificial position for the object in front of spot.
         # This is where the arm will be moving towards.
-        distance_correction_ratio = (ground_distance_to_object - 1.75) / ground_distance_to_object
+        object_distance_correction_ratio = (ground_distance_to_object - 1.9) / ground_distance_to_object
+        spot_distance_correction_ratio = (ground_distance_to_object - 1.9) / ground_distance_to_object
 
         artificial_object_point = PointStamped()
         artificial_object_point.header = object_point.header
-        artificial_object_point.point.x = self.pose.pose.position.x + distance_correction_ratio * vector.x
-        artificial_object_point.point.y = self.pose.pose.position.y + distance_correction_ratio * vector.y
-        artificial_object_point.point.z = self.pose.pose.position.y + distance_correction_ratio * vector.z
-
-        self.artificial_object_point_pub.publish(artificial_object_point)
+        artificial_object_point.point.x = self.pose.pose.position.x + object_distance_correction_ratio * vector.x
+        artificial_object_point.point.y = self.pose.pose.position.y + object_distance_correction_ratio * vector.y
+        # artificial_object_point.point.z = self.pose.pose.position.y + distance_correction_ratio * vector.z
 
         self.proximity = PoseStamped()
         self.proximity.header = object_point.header
-        self.proximity.pose.position.x = object_point.point.x - distance_correction_ratio * vector.x
-        self.proximity.pose.position.y = object_point.point.y - distance_correction_ratio * vector.y
+        self.proximity.pose.position.x = self.pose.pose.position.x + spot_distance_correction_ratio * vector.x
+        self.proximity.pose.position.y = self.pose.pose.position.y + spot_distance_correction_ratio * vector.y
 
         self.proximity.pose.orientation.x = heading
         self.proximity.pose.orientation.y = 0
         self.proximity.pose.orientation.z = 0
         self.proximity.pose.orientation.w = 0
+
+        self.proximity_pub.publish(self.proximity)
 
         print("\nProximity point:\n", self.proximity.pose)
         
@@ -138,6 +140,9 @@ class SpotMover:
                 print(e)
                 return
 
+        print("Past poses:\n", self.past_poses)
+        print("Next poses:\n", self.next_poses)
+
         point_to_move = input("\n-----------------------\n-----------------------\n\n    \
 Key legend:\n \
     1 - Grasp!\n \
@@ -147,24 +152,44 @@ Key legend:\n \
 "     Any other key - Refresh positions\n\n")
         print("\n\n-----------------------\n-----------------------\n\n")
 
-        self.past_poses.append(self.pose)
+        move = False
+        print("Current pose:", self.pose)
+
         if point_to_move == '1':
             print("Moving Spot and grasping...")
-            self.goal_pose_2d.position = object_point.point
-            self.proximity_pub.publish(self.proximity)
+            self.goal_pose_2d = self.proximity.pose
+            self.artificial_object_point_pub.publish(artificial_object_point)
+            self.past_poses.append(self.pose)
         elif point_to_move == '2':
             print("Moving Spot to grasping distance from the object...")
+            move = True
             self.goal_pose_2d = self.proximity.pose
+            self.past_poses.append(self.pose)
         elif point_to_move == '3' and len(self.past_poses) > 0:
             print("Moving Spot back in position history...")
+            move = True
             self.next_poses.append(self.pose)
-            self.goal_pose_2d = self.past_poses.pop().pose
+            previous_pose = self.past_poses.pop()
+            print(previous_pose)
+            self.goal_pose_2d = previous_pose.pose
+            self.past_poses.append(self.pose)
         elif point_to_move == '4' and len(self.next_poses) > 0:
+            move = True
             print("Moving Spot forward in position history...")
             self.goal_pose_2d = self.next_poses.pop().pose
+            self.past_poses.append(self.pose)
         else:
             print("Skipping the object...")
-            self.past_poses.pop()
+        
+        if move:
+            self.trajectory.waypoints.poses = [self.goal_pose_2d]
+            try:
+                print("moving spot to:\n", self.goal_pose_2d)
+                rospy.wait_for_service('trajectory_cmd', timeout=2.0)
+                self.trajectory_cmd(self.trajectory)
+            except rospy.ServiceException as e:
+                print("Service call failed: %s"%e, end='')
+                return
         
 
 def main(args):
