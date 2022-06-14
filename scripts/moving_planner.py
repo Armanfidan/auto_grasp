@@ -210,6 +210,7 @@ class Planner():
         rospy.loginfo("Sending goal")
         self.pickup_ac.send_goal(goal)
         self.spot_move_pub.publish(String("Time to move Spot!"))
+        self.switch_detectnet_pub.publish(String("spot"))
         
         rospy.loginfo("Waiting for result")
         self.pickup_ac.wait_for_result()
@@ -230,6 +231,7 @@ class Planner():
         self.kinova_gen3.reach_gripper_position(0.1)
 
         self.first_stage_complete = True
+
 
         return result.error_code.val
             
@@ -299,98 +301,6 @@ class Planner():
     def go_to_joint_position(self, joint_position_array, tolerance):
         return self.kinova_gen3.reach_joint_angles(joint_position_array, tolerance)
     
-    def look_at_object(self, object_pose):
-        current_pose = self.kinova_gen3.arm_group.get_current_pose().pose
-        dir_vector = Vector3(object_pose.position.x - current_pose.position.x, 
-                            object_pose.position.y - current_pose.position.y, 
-                            object_pose.position.z - current_pose.position.z)
-        target_pose = current_pose
-        target_pose.orientation = self.look_rotation(forward=dir_vector, up=Vector3(0,0,1))
-        return self.kinova_gen3.reach_cartesian_pose(pose=target_pose, tolerance=0.02)
-
-    # from https://github.com/UTNuclearRoboticsPublic/look_at_pose/blob/kinetic/nodes/look_at_pose_server
-    def normalise(self, input_vector):
-        mag = (input_vector.x**2+input_vector.y**2+input_vector.z**2)**0.5
-        unit_vector = Vector3()
-        unit_vector.x = input_vector.x/mag
-        unit_vector.y = input_vector.y/mag
-        unit_vector.z = input_vector.z/mag
-        return unit_vector
-    
-    # from https://github.com/UTNuclearRoboticsPublic/look_at_pose/blob/kinetic/nodes/look_at_pose_server
-    def cross_product(self, u, v):
-        cross = Vector3()
-        cross.x = u.y*v.z-v.y*u.z
-        cross.y = v.x*u.z-u.x*v.z
-        cross.z = u.x*v.y-u.y*v.x
-        return cross
-
-    # from http://answers.unity3d.com/questions/467614/what-is-the-source-code-of-quaternionlookrotation.html
-    def look_rotation(self, forward, up):
-        forward = self.normalise(forward)
-        right = self.normalise(self.cross_product(up,forward))
-        up = self.cross_product(forward, right)
-        
-        m00 = right.x
-        m01 = right.y
-        m02 = right.z
-        m10 = up.x
-        m11 = up.y
-        m12 = up.z
-        m20 = forward.x
-        m21 = forward.y
-        m22 = forward.z
-        
-        num8 = (m00 + m11) + m22
-        quaternion = Quaternion()
-        if (num8 > 0.0):
-            num = (num8 + 1.0)**0.5
-            quaternion.w = num * 0.5
-            num = 0.5 / num
-            quaternion.x = (m12 - m21) * num
-            quaternion.y = (m20 - m02) * num
-            quaternion.z = (m01 - m10) * num
-            return quaternion
-            
-        if ((m00 >= m11) and (m00 >= m22)):
-            num7 = (((1.0 + m00) - m11) - m22)**0.5
-            num4 = 0.5 / num7
-            quaternion.x = 0.5 * num7
-            quaternion.y = (m01 + m10) * num4
-            quaternion.z = (m02 + m20) * num4
-            quaternion.w = (m12 - m21) * num4
-            return quaternion
-        
-        if (m11 > m22):
-            num6 = (((1.0 + m11) - m00) - m22)**0.5
-            num3 = 0.5 / num6
-            quaternion.x = (m10 + m01) * num3
-            quaternion.y = 0.5 * num6
-            quaternion.z = (m21 + m12) * num3
-            quaternion.w = (m20 - m02) * num3
-            return quaternion
-        
-        num5 = (((1.0 + m22) - m00) - m11)**0.5
-        num2 = 0.5 / num5
-        quaternion.x = (m20 + m02) * num2
-        quaternion.y = (m21 + m12) * num2
-        quaternion.z = 0.5 * num5
-        quaternion.w = (m01 - m10) * num2
-        return quaternion
-
-    def spot_height(self, value):
-        tf = Transform()
-        tf.translation.z = value
-        
-        self.stand_srv_req.body_pose.translation = tf.translation
-        self.stand_srv_req.body_pose.rotation = tf.rotation
-
-        try:
-            rospy.wait_for_service("stand_cmd", timeout=2.0)
-            self.stand_srv_prox(self.stand_srv_req)
-        except rospy.ServiceException as e:
-            print("Service call failed: %s"%e)
-
     def createPickupGoal(self, group="arm", target="coloredCube",
 					 grasp_pose=PoseStamped(),
 					 possible_grasps=[],
