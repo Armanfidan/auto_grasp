@@ -7,6 +7,7 @@ find_package(catkin REQUIRED COMPONENTS
     vision_msgs
     dynamic_reconfigure
     tf
+	roslaunch
 )
 
 # catkin_install_python(
