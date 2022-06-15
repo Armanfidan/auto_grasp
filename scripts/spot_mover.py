@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 from geometry_msgs.msg import PointStamped, Point, Vector3, PoseArray, Pose, PoseStamped
+from std_msgs.msg import String
 
 import rospy
 import tf
@@ -45,6 +46,7 @@ class SpotMover:
 
         self.proximity_pub = rospy.Publisher('/waypoints/proximity', PoseStamped, queue_size=1)
         self.artificial_object_point_pub = rospy.Publisher('/move_spot/artificial_object_point', PointStamped, queue_size=1)
+        self.switch_detectnet_pub = rospy.Publisher('/switch_detectnet', String, queue_size=1)
         
         self.trajectory_cmd = rospy.ServiceProxy('trajectory_cmd', spot_driver.srv.Trajectory)
         self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
@@ -163,6 +165,7 @@ Key legend:\n \
             print("Moving Spot and grasping...")
             self.goal_pose_2d = self.proximity.pose
             self.artificial_object_point_pub.publish(artificial_object_point)
+            self.switch_detectnet_pub.publish(String("spot"))
             # self.past_poses.append(self.pose)
             self.prev_pose = self.pose
         elif point_to_move == '2':

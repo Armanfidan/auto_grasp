@@ -148,53 +148,6 @@ class Planner():
         #Pick
         self.pick(_pose, object_class)
     
-    def grasp_with_constraints(self, _pointStamped, object_class="TeddyBear"):
-        rospy.loginfo("Removing any previous objects")
-        self.scene.remove_attached_object("kinova_end_effector_link")
-        self.scene.remove_world_object(object_class)
-        rospy.sleep(2) # Removing is fast
-
-        # Get current pose
-        actual_pose = self.kinova_gen3.get_cartesian_pose()
-        # Set target position
-        actual_pose.position = _pointStamped.point
-
-        # Orientation constraint (we want the end effector to stay the same orientation)
-        constraints = Constraints()
-        orientation_constraint = OrientationConstraint()
-        orientation_constraint.orientation = actual_pose.orientation
-        constraints.orientation_constraints.append(orientation_constraint)
-
-        rospy.loginfo("Opening gripper")
-        self.kinova_gen3.reach_gripper_position(0.1)
-
-        _pose = PoseStamped()
-        _pose.header = _pointStamped.header
-        _pose.pose.position = _pointStamped.point
-        # Correct offset added by the depth sensor and/or hand-camera calibration
-        _pose.pose.position.z += 0.075
-        _pose.pose.position.y += 0.065
-        _pose.pose.position.x += 0.05
-        _pose.pose.orientation = Quaternion()
-        rospy.loginfo("Object pose: %s", _pose.pose)
-
-        #Add object description in scene
-        self.add_collision_objects(_pose, object_class)
-
-        #self.kinova_gen3.reach_cartesian_pose(pose=actual_pose, tolerance=0.01, constraints=constraints)
-        self.kinova_gen3.reach_cartesian_pose(pose=actual_pose, tolerance=0.01)
-        
-        rospy.loginfo("Closing the gripper 95%...")
-        print(self.kinova_gen3.reach_gripper_position(0.95))
-
-        # Resume octomap updates 
-        self.republish = True
-
-        rospy.loginfo("Going home...")
-        self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
-        rospy.loginfo("Opening gripper")
-        self.kinova_gen3.reach_gripper_position(0.1)
-
     def pick(self, pose_stamped, object_class):
         rospy.loginfo("Opening gripper")
         self.kinova_gen3.reach_gripper_position(0.1)
@@ -210,7 +163,6 @@ class Planner():
         rospy.loginfo("Sending goal")
         self.pickup_ac.send_goal(goal)
         self.spot_move_pub.publish(String("Time to move Spot!"))
-        self.switch_detectnet_pub.publish(String("spot"))
         
         rospy.loginfo("Waiting for result")
         self.pickup_ac.wait_for_result()
