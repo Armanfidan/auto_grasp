@@ -4,7 +4,7 @@
     <arg name="password" default="oxyw9las1i8b" />
     <arg name="hostname" default="192.168.50.3" />
 
-    <node pkg="auto_grasp" type="expose_rotated_images.py" name="expose_rotated_images"
+    <node pkg="auto_grasp" type="image_rotator.py" name="image_rotator"
     args="$(arg hostname)
           --username $(arg username)
           --password $(arg password)
