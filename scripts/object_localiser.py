@@ -16,7 +16,7 @@ from cv_bridge import CvBridge
 
 sources = ['frontleft', 'frontright']
 
-source = sources[1]
+source = sources[0]
 
 detection_topic = '/detectnet/detections'
 
@@ -29,12 +29,10 @@ kinova_camera_info_topic = '/camera/depth/camera_info'
 
 switch_detectnet_topic = '/switch_detectnet'
 
+initial_detectnet_source = 'kinova'
+
 final_frame_id = "/vision_odometry_frame"
 
-def switch_detectnet_callback(self, switch):
-    assert switch.data == 'kinova' or switch.data == 'spot'
-    which_detectnet = switch.data
-    ObjectLocaliser(which_detectnet=which_detectnet)
 
 
 def get_distance_to_bbox_centre(raw_depth_image, bbox_centre, roi_size, depth_scale):
@@ -61,31 +59,52 @@ def get_distance_to_bbox_centre(raw_depth_image, bbox_centre, roi_size, depth_sc
 
 
 class ObjectLocaliser:
-    def __init__(self, which_detectnet, roi_size=1):
+    def __init__(self, current_detectnet_source, depth_frame_id=None, roi_size=1):
         self.raw_bbox_centre = None
         self.detection = None
         self.object_region = []
-        self.which_detectnet = which_detectnet
+        self.current_detectnet_source = current_detectnet_source
+        self.tf_timestamp = None
 
-        self.depth_image_topic = kinova_depth_image_topic if which_detectnet == 'kinova' else spot_depth_image_topic
-        self.camera_info_topic = kinova_camera_info_topic if which_detectnet == 'kinova' else spot_camera_info_topic
+        self.depth_frame_id = depth_frame_id
+
+        self.depth_image_topic = kinova_depth_image_topic if current_detectnet_source == 'kinova' else spot_depth_image_topic
+        self.camera_info_topic = kinova_camera_info_topic if current_detectnet_source == 'kinova' else spot_camera_info_topic
 
         self.roi_size = roi_size
-
         self.intrinsics_exist = False
         self.camera_intrinsics = {}
-
 
         self.depth_sub = rospy.Subscriber(self.depth_image_topic, Image, self.depth_image_callback, queue_size=1)
         self.detectnet_sub = rospy.Subscriber(detection_topic, Detection2DArray, self.detection_callback, queue_size=1)
         self.camera_info_sub = rospy.Subscriber(self.camera_info_topic, CameraInfo, self.camera_info_callback, queue_size=1)
         self.switch_detectnet_sub = rospy.Subscriber(switch_detectnet_topic, String, self.switch_detectnet_callback, queue_size=1)
         self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
-        # rospy.loginfo("Publishing object positions on /object_point")
+        
         self.object_point_camera_frame_pub = rospy.Publisher("/object_point/camera_frame", PointStamped, queue_size=1)
         self.object_point_odometry_frame_pub = rospy.Publisher("/object_point/odometry_frame", PointStamped, queue_size=1)
         self.listener = tf.TransformListener()
-        
+
+    def switch_detectnet_callback(self, switch):
+        new_detectnet_source = switch.data
+        assert new_detectnet_source == 'kinova' or new_detectnet_source == 'spot'
+        if new_detectnet_source != self.current_detectnet_source:
+            self.__init__(new_detectnet_source, self.depth_frame_id)
+
+    def camera_info_callback(self, camera_info_msg):
+        if self.intrinsics_exist or self.depth_frame_id == camera_info_msg.header.frame_id:
+            return
+        print("Camera intrinsics belong to", self.current_detectnet_source)
+        self.depth_frame_id = camera_info_msg.header.frame_id
+        print("Frame:", self.depth_frame_id)
+        self.width, self.height = camera_info_msg.width, camera_info_msg.height
+        self.camera_intrinsics = {
+            'focal_x': camera_info_msg.K[0],
+            'focal_y': camera_info_msg.K[4],
+            'principal_x': camera_info_msg.K[2],
+            'principal_y': camera_info_msg.K[5]
+        }
+        self.intrinsics_exist = True
 
     def get_object_position_spot(self, raw_depth_image):
         """
@@ -95,6 +114,7 @@ class ObjectLocaliser:
         Args:
             depth_image_pixels (np.array): The raw depth image in a NumPy array
         """
+        # print("SPOTSPOT")
         # The image used for detection is rotated 90 degrees clockwise. We correct the rotation by rotating
         # the bounding box points in the other direction.
         x, y = self.raw_bbox_centre
@@ -104,6 +124,8 @@ class ObjectLocaliser:
             bridge = CvBridge()
             # Get the depth data from the region in the bounding box. ROI is 1, depth scale is 999 (From image info)
             depth = get_distance_to_bbox_centre(raw_depth_image, bbox_centre, self.roi_size, 999)
+            print(bbox_centre)
+            print(depth)
 
             if depth >= 4.0:
                 # Not enough depth data.
@@ -130,7 +152,9 @@ class ObjectLocaliser:
         Args:
             depth_image_pixels (np.array): The raw depth image in a NumPy array
         """
-
+        # print("KINOVAKINOVA")
+        if not self.tf_timestamp:
+            return
         # How much to shrink bbox coordinates
         colour_to_depth_size_ratio = self.width / 1280
 
@@ -176,29 +200,18 @@ class ObjectLocaliser:
     def tf_listener(self, tf_msg):
         self.tf_timestamp = tf_msg.transforms[0].header.stamp
 
-    def camera_info_callback(self, camera_info_msg):
-        if self.intrinsics_exist or not self.which_detectnet:
-            return
-        self.depth_frame_id = camera_info_msg.header.frame_id
-        self.width, self.height = camera_info_msg.width, camera_info_msg.height
-        self.camera_intrinsics = {
-            'focal_x': camera_info_msg.K[0],
-            'focal_y': camera_info_msg.K[4],
-            'principal_x': camera_info_msg.K[2],
-            'principal_y': camera_info_msg.K[5]
-        }
-        self.intrinsics_exist = True
-
     def depth_image_callback(self, depth_image_msg):
+        # print(self.depth_image_topic)
         if not (self.raw_bbox_centre and self.intrinsics_exist):
             return
 
         bridge = CvBridge()
         raw_depth_image = bridge.imgmsg_to_cv2(depth_image_msg, desired_encoding="passthrough")
-        
         object_in_camera_frame = self.get_object_position_kinova(raw_depth_image) \
-            if self.which_detectnet == 'kinova' \
+            if self.current_detectnet_source == 'kinova' \
             else self.get_object_position_spot(raw_depth_image)
+        # print(object_in_camera_frame)
+        # print("Got object position from", self.current_detectnet_source)
 
         object_point_camera_frame = PointStamped()
         object_point_camera_frame.header.stamp = self.tf_timestamp
@@ -241,14 +254,12 @@ class ObjectLocaliser:
 
 def main(args):
     rospy.init_node('object_localiser', anonymous=True)
-    ObjectLocaliser(which_detectnet='kinova')
-    switch_detectnet_sub = rospy.Subscriber(switch_detectnet_topic, switch_detectnet_callback, queue_size=1)
+    localiser = ObjectLocaliser(current_detectnet_source=initial_detectnet_source)
     try:
         rospy.spin()
     except KeyboardInterrupt:
-        print("Shutting down ROS Image detection processor module")
+        print("Shutting down object localiser module...")
 
 
 if __name__ == "__main__":
     main(sys.argv)
-

@@ -74,6 +74,7 @@ class Planner():
             rospy.Subscriber(object_point_topic, PointStamped, self.object_point_callback, queue_size=1)
 
         self.spot_move_pub = rospy.Publisher(spot_move_topic, String, queue_size=1)
+        self.switch_detectnet_pub = rospy.Publisher('/switch_detectnet', String, queue_size=1)
 
         rospy.init_node('planner', anonymous=True)
         
@@ -102,17 +103,31 @@ class Planner():
 
     def artificial_object_point_callback(self, object_position):
         if self.first_stage_complete:
-            return
+            reset = input("Reset grasp? y/n")
+            if reset == 'y':
+                self.first_stage_complete = False
+            else:
+                return
         print("\nRECEIVED ARTIFICIAL OBJECT POINT. GRASPING!\n")
         self.grasp_object(object_position)
 
-    def object_point_callback(self, object_position):
+    def object_point_callback(self, object_point):
         # print("object point received. Is the first stage complete?", self.first_stage_complete)
         if not self.first_stage_complete:
             return
-        print("\nRECEIVED OBJECT POINT. GRASPING!\n")
-        self.grasp_object(object_position)
-        self.first_stage_complete = False
+        print("\nOBJECT POINT RECEIVED:\n")
+        grasp = False
+        switch = False
+        while not (grasp or switch):
+            print(object_point.point)
+            inp = input("\nGrasp this point?\ny to grasp,\ns to switch to Kinova camera and reset grasp,\nany other key to skip\n")
+            grasp  = inp == 'y'
+            switch = inp == 's'
+        if switch:
+            self.switch_detectnet_pub.publish(String("kinova"))
+            self.first_stage_complete = False
+        else:
+            self.grasp_object(object_point)
 
     def grasp_object(self, _pointStamped, object_class="TeddyBear"):
         rospy.loginfo("Removing any previous objects")
@@ -139,7 +154,7 @@ class Planner():
         # Tweak as required.
         _pose.pose.position.z += 0.01
         _pose.pose.position.y -= 0.02
-        _pose.pose.position.x -= 0.02
+        # _pose.pose.position.x -= 0.02
         _pose.pose.orientation = Quaternion()
         rospy.loginfo("Object pose: %s", _pose.pose)
 

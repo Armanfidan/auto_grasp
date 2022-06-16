@@ -100,7 +100,8 @@ class SpotMover:
         vector.y = object_point.point.y - self.pose.pose.position.y
         vector.z = object_point.point.z - self.pose.pose.position.z
 
-        heading = math.atan2(vector.y, vector.x)
+        heading = math.atan2(vector.y, vector.x) + 0.2
+        print("Heading:", heading)
 
         print("\nVector:\n", vector)
 
