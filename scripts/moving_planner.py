@@ -51,8 +51,8 @@ for name in MoveItErrorCodes.__dict__.keys():
 
 
 
-class Planner():
-    def __init__(self):
+class MovingPlanner():
+    def __init__(self, sg, pickup_ac, clear_octomap, stand_srv_prox, stand_srv_req):
         
         self.object_class = ""
         self.grasp = False
@@ -76,26 +76,14 @@ class Planner():
         self.spot_move_pub = rospy.Publisher(spot_move_topic, String, queue_size=1)
         self.switch_detectnet_pub = rospy.Publisher('/switch_detectnet', String, queue_size=1)
 
-        rospy.init_node('planner', anonymous=True)
-        
+        self.sg = sg
+        self.pickup_ac = pickup_ac
+        self.clear_octomap = clear_octomap
+        self.stand_srv_prox = stand_srv_prox
+        self.stand_srv_req = stand_srv_req
         self.listener = tf.TransformListener()
 
-        rospy.loginfo("Initalizing grasp generator...")
-        self.sg = SphericalGrasps()
-        rospy.loginfo("Grasp generator initialised.")
-
-        rospy.loginfo("Connecting to pickup action server...")
-        self.pickup_ac = SimpleActionClient('/pickup', PickupAction)
-        self.pickup_ac.wait_for_server()
-        rospy.loginfo("Connected to pickup action server.")
         
-        rospy.loginfo("Connecting to clear octomap service...")
-        self.clear_octomap = rospy.ServiceProxy('/clear_octomap', Empty)
-        self.clear_octomap.wait_for_service()
-        rospy.loginfo("Connected to clear octomap service.")
-
-        self.stand_srv_prox = rospy.ServiceProxy("stand_cmd", Stand)
-        self.stand_srv_req = StandRequest()
 
         print("Going home...")
         self.go_to_joint_position(known_joint_positions['home2'], tolerance=0.01)
@@ -125,7 +113,7 @@ class Planner():
             switch = inp == 's'
         if switch:
             self.switch_detectnet_pub.publish(String("kinova"))
-            self.first_stage_complete = False
+            self.__init__(self.sg, self.pickup_ac, self.clear_octomap, self.stand_srv_prox, self.stand_srv_req)
         else:
             self.grasp_object(object_point)
 
@@ -293,7 +281,26 @@ class Planner():
 
 if __name__ == "__main__":
 
-    entity_ranking_ros = Planner()
+    rospy.init_node('planner', anonymous=True)
+
+    rospy.loginfo("Initalizing grasp generator...")
+    sg = SphericalGrasps()
+    rospy.loginfo("Grasp generator initialised.")
+
+    rospy.loginfo("Connecting to pickup action server...")
+    pickup_ac = SimpleActionClient('/pickup', PickupAction)
+    pickup_ac.wait_for_server()
+    rospy.loginfo("Connected to pickup action server.")
+    
+    rospy.loginfo("Connecting to clear octomap service...")
+    clear_octomap = rospy.ServiceProxy('/clear_octomap', Empty)
+    clear_octomap.wait_for_service()
+    rospy.loginfo("Connected to clear octomap service.")
+
+    stand_srv_prox = rospy.ServiceProxy("stand_cmd", Stand)
+    stand_srv_req = StandRequest()
+
+    entity_ranking_ros = MovingPlanner(sg, pickup_ac, clear_octomap, stand_srv_prox, stand_srv_req)
     
     try:
         rospy.spin()

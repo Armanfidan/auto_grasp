@@ -105,12 +105,12 @@ class SpotMover:
 
         print("\nVector:\n", vector)
 
-        # L2 distance to the object
+        # # L2 distance to the object
         ground_distance_to_object = np.sqrt(vector.x ** 2 + vector.y ** 2)
-        if ground_distance_to_object < 1.9:
-            print("\nDistance between Spot and object is {:.2f} metres.".format(ground_distance_to_object))
-            print("Spot needs to be at least 1.9 metres away from the object.")
-            return
+        # if ground_distance_to_object < 1.9:
+        #     print("\nDistance between Spot and object is {:.2f} metres.".format(ground_distance_to_object))
+        #     print("Spot needs to be at least 1.9 metres away from the object.")
+        #     return
 
         # Now we create an artificial position for the object in front of spot.
         # This is where the arm will be moving towards.

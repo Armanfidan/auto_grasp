@@ -16,7 +16,7 @@ from cv_bridge import CvBridge
 
 sources = ['frontleft', 'frontright']
 
-source = sources[0]
+source = sources[1]
 
 detection_topic = '/detectnet/detections'
 
@@ -45,6 +45,8 @@ def get_distance_to_bbox_centre(raw_depth_image, bbox_centre, roi_size, depth_sc
         roi_size (int): How many pixels to explore in each direction to find a valid depth value
         depth_scale (float): Depth scale of the image to convert from sensor value to meters
     """
+    # print("BBox centre:", bbox_centre)
+    # print("Depth image shape:", raw_depth_image.shape)
     x, y = bbox_centre
     roi = []
     depths = []
@@ -66,6 +68,9 @@ class ObjectLocaliser:
         self.current_detectnet_source = current_detectnet_source
         self.tf_timestamp = None
 
+        self.odom_points = []
+        self.camera_points = []
+
         self.depth_frame_id = depth_frame_id
 
         self.depth_image_topic = kinova_depth_image_topic if current_detectnet_source == 'kinova' else spot_depth_image_topic
@@ -82,6 +87,7 @@ class ObjectLocaliser:
         self.tf_sub = rospy.Subscriber("/tf", TFMessage, self.tf_listener, queue_size=1)
         
         self.object_point_camera_frame_pub = rospy.Publisher("/object_point/camera_frame", PointStamped, queue_size=1)
+        self.object_point_base_link_pub = rospy.Publisher("/object_point/base_link", PointStamped, queue_size=1)
         self.object_point_odometry_frame_pub = rospy.Publisher("/object_point/odometry_frame", PointStamped, queue_size=1)
         self.listener = tf.TransformListener()
 
@@ -124,8 +130,8 @@ class ObjectLocaliser:
             bridge = CvBridge()
             # Get the depth data from the region in the bounding box. ROI is 1, depth scale is 999 (From image info)
             depth = get_distance_to_bbox_centre(raw_depth_image, bbox_centre, self.roi_size, 999)
-            print(bbox_centre)
-            print(depth)
+            # print(bbox_centre)
+            # print(depth)
 
             if depth >= 4.0:
                 # Not enough depth data.
@@ -201,7 +207,6 @@ class ObjectLocaliser:
         self.tf_timestamp = tf_msg.transforms[0].header.stamp
 
     def depth_image_callback(self, depth_image_msg):
-        # print(self.depth_image_topic)
         if not (self.raw_bbox_centre and self.intrinsics_exist):
             return
 
@@ -225,6 +230,8 @@ class ObjectLocaliser:
         try:
             self.listener.waitForTransform(self.depth_frame_id, final_frame_id, self.tf_timestamp, rospy.Duration(4.0))
             object_point_odometry_frame = self.listener.transformPoint(final_frame_id, object_point_camera_frame)
+            self.listener.waitForTransform(self.depth_frame_id, '/base_link', self.tf_timestamp, rospy.Duration(4.0))
+            object_point_base_link = self.listener.transformPoint('/base_link', object_point_camera_frame)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException, tf2_ros.TransformException) as e:
             print("The point could not be transformed:", e)
             return
@@ -242,14 +249,66 @@ class ObjectLocaliser:
             return
         
         self.object_point_odometry_frame_pub.publish(object_point_odometry_frame)
+        self.object_point_base_link_pub.publish(object_point_base_link)
+
+        # # Let's make it accumulate the positions over 1000 tries and find the error!
+        # if len(self.odom_points) < 1000:
+        #     print(len(self.odom_points))
+        #     self.odom_points.append(object_point_odometry_frame)
+        #     self.camera_points.append(object_point_camera_frame)
+        # else:
+        #     odom_x = [point.point.x for point in self.odom_points]
+        #     odom_y = [point.point.y for point in self.odom_points]
+        #     odom_z = [point.point.z for point in self.odom_points]
+        #     camera_x = [point.point.x for point in self.camera_points]
+        #     camera_y = [point.point.y for point in self.camera_points]
+        #     camera_z = [point.point.z for point in self.camera_points]
+        #     odom_max_difference_x = max(odom_x) - min(odom_x)
+        #     odom_max_difference_y = max(odom_y) - min(odom_y)
+        #     odom_max_difference_z = max(odom_z) - min(odom_z)
+        #     camera_max_difference_x = max(camera_x) - min(camera_x)
+        #     camera_max_difference_y = max(camera_y) - min(camera_y)
+        #     camera_max_difference_z = max(camera_z) - min(camera_z)
+        #     odom_max_difference_x_p = odom_max_difference_x / np.mean(odom_x)
+        #     odom_max_difference_y_p = odom_max_difference_y / np.mean(odom_y)
+        #     odom_max_difference_z_p = odom_max_difference_z / np.mean(odom_z)
+        #     camera_max_difference_x_p = camera_max_difference_x / np.mean(camera_x)
+        #     camera_max_difference_y_p = camera_max_difference_x / np.mean(camera_x)
+        #     camera_max_difference_z_p = camera_max_difference_x / np.mean(camera_x)
+        #     print("Average distance over 1000 trials (m):")
+        #     print("Odometry frame (x, y, z, norm):", np.mean(odom_x), np.mean(odom_y), np.mean(odom_z), np.sqrt(np.mean(odom_x) ** 2 + np.mean(odom_y) ** 2 + np.mean(odom_z) ** 2), sep="\n")
+        #     print("Camera frame (x, y, z, norm):", np.mean(camera_x), np.mean(camera_y), np.mean(camera_z), np.sqrt(np.mean(camera_x) ** 2 + np.mean(camera_y) ** 2 + np.mean(camera_z) ** 2), sep="\n")
+        #     print("Odometry frame absolute uncertainties over 1000 trials (m):")
+        #     print(odom_max_difference_x)
+        #     print(odom_max_difference_y)
+        #     print(odom_max_difference_z)
+        #     print("Camera frame absolute uncertainties over 1000 trials (m):")
+        #     print(camera_max_difference_x)
+        #     print(camera_max_difference_y)
+        #     print(camera_max_difference_z)
+        #     print("Odometry frame relative uncertainties over 1000 trials (%):")
+        #     print(odom_max_difference_x_p)
+        #     print(odom_max_difference_y_p)
+        #     print(odom_max_difference_z_p)
+        #     print("Camera frame relative uncertainties over 1000 trials (%):")
+        #     print(camera_max_difference_x_p)
+        #     print(camera_max_difference_y_p)
+        #     print(camera_max_difference_z_p)
+        #     self.odom_points = []
+        #     self.camera_points = []
+
+
         self.bbox = None
   
     def detection_callback(self, detections_msg):
-        detection = detections_msg.detections[0]
-        self.raw_bbox_centre = (
-            int(detection.bbox.center.x),
-            int(detection.bbox.center.y)
-        )
+        for detection in detections_msg.detections:
+            if (self.current_detectnet_source == 'kinova' and (detection.results[0].id == 88 or detection.results[0].id == 11)) or \
+                (self.current_detectnet_source == 'spot'):
+                self.raw_bbox_centre = (
+                    int(detection.bbox.center.x),
+                    int(detection.bbox.center.y)
+                )
+                break
 
 
 def main(args):

@@ -40,7 +40,7 @@ from spot_driver.msg import KinematicState
 
 
 click_topic = '/detectnet/overlay_mouse_left'
-object_point_topic = '/object_point/spot/odometry_frame'
+object_point_topic = '/object_point/odometry_frame'
 
 
 moveit_error_dict = {}
@@ -57,7 +57,6 @@ class Planner():
         self.object_class = ""
         self.grasp = False
 
-        self.kinematic_state_sub = rospy.Subscriber('/kinematic_state', KinematicState, self.kinematic_state_callback, queue_size=1)
         # Create robot object
         self.kinova_gen3 = KinovaGen3(rospy.get_namespace(), True, "kinova_finger_joint", 7)
 
