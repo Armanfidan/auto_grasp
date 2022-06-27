@@ -104,17 +104,14 @@ class MovingPlanner():
         if not self.first_stage_complete:
             return
         print("\nOBJECT POINT RECEIVED:\n")
-        grasp = False
-        switch = False
-        while not (grasp or switch):
-            print(object_point.point)
-            inp = input("\nGrasp this point?\ny to grasp,\ns to switch to Kinova camera and reset grasp,\nany other key to skip\n")
-            grasp  = inp == 'y'
-            switch = inp == 's'
-        if switch:
+        print(object_point.point)
+        inp = input("\n- Press 'g' to grasp this point,\n" + \
+		      "- Press 'r' to switch to Kinova camera and reset grasp,\n" + \
+		      "- Press any other key to skip this point.\n")
+        if inp == 'r':
             self.switch_detectnet_pub.publish(String("kinova"))
             self.__init__(self.sg, self.pickup_ac, self.clear_octomap, self.stand_srv_prox, self.stand_srv_req)
-        else:
+        elif inp == 'g':
             self.grasp_object(object_point)
 
     def grasp_object(self, _pointStamped, object_class="TeddyBear"):
